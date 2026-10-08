@@ -98,7 +98,7 @@ function createMedia({ config, models, storage, log = console }) {
       if (!asset.thumb_key) {
         await step('waveform', async () => {
           update.thumb_key = await produce('png', ['-i', src, '-filter_complex',
-            'aformat=channel_layouts=mono,showwavespic=s=1280x720:colors=0xb79cff', '-frames:v', '1']);
+            'aformat=channel_layouts=mono,showwavespic=s=1280x720:colors=0x8a8a86', '-frames:v', '1']);
         });
       }
       if (!asset.preview_key && !BROWSER_AUDIO.has(asset.file_ext)) {

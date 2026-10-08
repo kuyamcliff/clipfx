@@ -48,51 +48,40 @@ const ICONS = {
 
 const icon = (name, cls = '') => raw(`<svg class="icon ${cls}" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICONS[name] || ICONS.box}</svg>`);
 
-function hueOf(str) {
-  let h = 0;
-  for (const c of String(str)) h = (h * 31 + c.codePointAt(0)) % 360;
-  return h;
-}
-
 function avatar(user, size = '') {
   const name = user.display_name || user.username || '?';
   const initials = name.split(/\s+/).map((w) => [...w][0]).join('').slice(0, 2).toUpperCase();
-  return html`<span class="avatar ${size}" style="--h:${hueOf(user.username || name)}" aria-hidden="true">${initials}</span>`;
+  return html`<span class="avatar ${size}" aria-hidden="true">${initials}</span>`;
 }
 
 const csrfField = (ctx) => html`<input type="hidden" name="_csrf" value="${ctx.csrf}">`;
 
-function badges(a) {
-  return html`
-    ${a.resolution ? html`<span class="badge">${a.resolution}${a.vertical ? ' · 9:16' : ''}</span>` : ''}
-    ${a.durationLabel ? html`<span class="badge">${a.durationLabel}</span>` : ''}
-    ${!a.resolution && !a.durationLabel ? html`<span class="badge">.${a.file_ext}</span>` : ''}`;
+// "1080p · 0:12 · CC0" style spec line.
+function specLine(a, { withLicense = true } = {}) {
+  const parts = [];
+  if (a.resolution) parts.push(a.vertical ? `${a.resolution} vertical` : a.resolution);
+  if (!a.resolution && !a.durationLabel) parts.push(`.${a.file_ext}`);
+  if (withLicense) parts.push(a.license.short);
+  return parts.join(' · ');
 }
 
 function media(a) {
   if (a.thumbUrl) return html`<img src="${a.thumbUrl}" alt="" loading="lazy" decoding="async">`;
-  return html`<div class="placeholder">${icon(a.category.icon)}<span>.${a.file_ext}</span></div>`;
+  return html`<div class="placeholder"><span class="ph-kind">${a.kindInfo.name}</span><span class="ph-ext">.${a.file_ext}</span></div>`;
 }
 
 function assetCard(a, opts = {}) {
   return html`
   <article class="card" ${a.videoSrc ? html`data-preview="${a.videoSrc}"` : ''}>
-    <a class="card-media" href="${a.url}" style="--h:${a.category.hue}" tabindex="-1" aria-hidden="true">
+    <a class="card-media" href="${a.url}" tabindex="-1" aria-hidden="true">
       ${media(a)}
-      <div class="card-badges">${badges(a)}</div>
-      ${a.kind === 'audio' ? html`<span class="card-kind">${icon('wave')}</span>` : ''}
-      ${a.visibility === 'unlisted' ? html`<span class="card-flag">${icon('lock')} Unlisted</span>` : ''}
+      ${a.durationLabel ? html`<span class="card-time">${a.durationLabel}</span>` : ''}
+      ${a.visibility === 'unlisted' ? html`<span class="card-flag">Unlisted</span>` : ''}
     </a>
     <div class="card-body">
       <h3 class="card-title"><a href="${a.url}">${a.title}</a></h3>
-      <div class="card-meta">
-        ${opts.hideUser ? html`<span class="muted">${a.category.name}</span>` : html`<a href="/u/${a.username}" class="card-user">${a.display_name}</a>`}
-        <span class="card-stats" title="${a.downloads} downloads">${icon('download')}${formatCount(a.downloads)}</span>
-      </div>
-      <div class="card-chips">
-        ${opts.hideUser ? '' : html`<span class="chip">${a.category.name}</span>`}
-        <span class="chip chip-license" title="${a.license.name}">${a.license.short}</span>
-      </div>
+      <p class="card-meta">${specLine(a)} · ${formatCount(a.downloads)} dl</p>
+      ${opts.hideUser ? '' : html`<p class="card-by"><a href="/u/${a.username}">${a.display_name}</a></p>`}
     </div>
   </article>`;
 }
@@ -122,17 +111,17 @@ function pagination(result, base, query = {}) {
       : html`<a class="page-num" href="${pageHref(base, query, n)}">${n}</a>`);
   });
   return html`<nav class="pagination" aria-label="Pagination">
-    ${page > 1 ? html`<a class="btn btn-ghost" href="${pageHref(base, query, page - 1)}" rel="prev">← Prev</a>` : ''}
+    ${page > 1 ? html`<a class="page-num" href="${pageHref(base, query, page - 1)}" rel="prev">← prev</a>` : ''}
     ${items}
-    ${page < pages ? html`<a class="btn btn-ghost" href="${pageHref(base, query, page + 1)}" rel="next">Next →</a>` : ''}
+    ${page < pages ? html`<a class="page-num" href="${pageHref(base, query, page + 1)}" rel="next">next →</a>` : ''}
   </nav>`;
 }
 
-function emptyState(iconName, title, text, action) {
+// First argument kept for call-site compatibility; empty states are text only.
+function emptyState(_icon, title, text, action) {
   return html`<div class="empty">
-    <div class="empty-icon">${icon(iconName)}</div>
     <h3>${title}</h3>
-    <p class="muted">${text}</p>
+    <p>${text}</p>
     ${action || ''}
   </div>`;
 }
@@ -152,5 +141,5 @@ function meter(used, total) {
 }
 
 module.exports = {
-  ICONS, icon, avatar, csrfField, assetCard, assetGrid, pagination, pageHref, emptyState, fieldError, invalid, meter, hueOf, badges, media,
+  ICONS, icon, avatar, csrfField, assetCard, assetGrid, pagination, pageHref, emptyState, fieldError, invalid, meter, specLine, media,
 };

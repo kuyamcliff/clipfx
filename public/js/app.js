@@ -104,6 +104,7 @@
       const show = input.type === 'password';
       input.type = show ? 'text' : 'password';
       btn.setAttribute('aria-label', show ? 'Hide password' : 'Show password');
+      btn.textContent = show ? 'hide' : 'show';
     });
   });
 

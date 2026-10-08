@@ -1,39 +1,23 @@
 'use strict';
 const { html } = require('../html');
 const { layout } = require('./layout');
-const { icon, csrfField, fieldError, invalid } = require('./components');
+const { csrfField, fieldError, invalid } = require('./components');
 
-function authShell(ctx, title, inner, aside) {
-  return layout(ctx, {
-    title,
-    noindex: true,
-    body: html`<div class="container auth">
-      <div class="auth-card panel">${inner}</div>
-      <aside class="auth-aside">${aside}</aside>
-    </div>`,
-  });
+function authShell(ctx, title, inner) {
+  return layout(ctx, { title, noindex: true, body: html`<div class="container auth">${inner}</div>` });
 }
-
-const perks = (ctx) => html`
-  <h2>Why join?</h2>
-  <ul class="perk-list">
-    <li>${icon('upload')}<span><strong>Share your work</strong> — footage, templates, LUTs, sounds, anything.</span></li>
-    <li>${icon('link')}<span><strong>Short share links</strong> for your descriptions, Discord and tutorials.</span></li>
-    <li>${icon('heart')}<span><strong>Save favorites</strong> into your own collection.</span></li>
-    <li>${icon('shield')}<span><strong>No ads, no tracking.</strong> ${ctx.config.siteName} is a nonprofit.</span></li>
-  </ul>`;
 
 function passwordInput(id, name, autocomplete, errors) {
   return html`<div class="password-field">
     <input id="${id}" name="${name}" type="password" required minlength="8" maxlength="200" autocomplete="${autocomplete}"${invalid(errors, name)}>
-    <button type="button" class="btn-icon" data-toggle-password="${id}" aria-label="Show password">${icon('eye')}</button>
+    <button type="button" data-toggle-password="${id}" aria-label="Show password">show</button>
   </div>`;
 }
 
 function signup(ctx, { values, errors, next }) {
   return authShell(ctx, 'Create an account', html`
-    <h1>Join ${ctx.config.siteName}</h1>
-    <p class="muted">Free forever. Takes 20 seconds.</p>
+    <h1>Create an account</h1>
+    <p>You only need one to upload or save assets. Downloading doesn’t need an account.</p>
     <form method="post" action="/signup" class="stack" novalidate>
       ${csrfField(ctx)}
       <input type="hidden" name="next" value="${next}">
@@ -44,33 +28,30 @@ function signup(ctx, { values, errors, next }) {
         ${fieldError(errors, 'username')}
       </div>
       <div class="field">
-        <label for="display_name">Display name <span class="muted">(optional)</span></label>
-        <input id="display_name" name="display_name" maxlength="50" autocomplete="name" value="${values.display_name || ''}" placeholder="How you’ll be credited">
+        <label for="display_name">Display name <span class="muted">optional, used in credits</span></label>
+        <input id="display_name" name="display_name" maxlength="50" autocomplete="name" value="${values.display_name || ''}">
       </div>
       <div class="field">
-        <label for="email">Email <span class="muted">(optional)</span></label>
+        <label for="email">Email <span class="muted">optional, only used if you lose access</span></label>
         <input id="email" name="email" type="email" maxlength="200" autocomplete="email" value="${values.email || ''}"${invalid(errors, 'email')}>
         ${fieldError(errors, 'email')}
-        <p class="hint">Only used to verify you if you lose access. Never shared, never spammed.</p>
       </div>
       <div class="field">
-        <label for="password">Password</label>
+        <label for="password">Password <span class="muted">8+ characters</span></label>
         ${passwordInput('password', 'password', 'new-password', errors)}
         ${fieldError(errors, 'password')}
-        <p class="hint">At least 8 characters.</p>
       </div>
       <label class="check ${errors.agree ? 'has-error' : ''}"><input type="checkbox" name="agree" required> <span>I’ll follow the <a href="/guidelines" target="_blank">community guidelines</a> and <a href="/terms" target="_blank">terms</a>.</span></label>
       ${fieldError(errors, 'agree')}
       <button class="btn btn-primary btn-block btn-lg" type="submit">Create account</button>
-      <p class="center muted small">Already a member? <a href="/login${next ? `?next=${encodeURIComponent(next)}` : ''}">Log in</a></p>
-    </form>`, perks(ctx));
+    </form>
+    <div class="auth-foot"><p>Have an account? <a href="/login${next ? `?next=${encodeURIComponent(next)}` : ''}">Log in</a></p></div>`);
 }
 
 function login(ctx, { values, error, next }) {
   return authShell(ctx, 'Log in', html`
-    <h1>Welcome back</h1>
-    <p class="muted">Log in to upload, save and manage your assets.</p>
-    ${error ? html`<div class="notice notice-danger" role="alert">${icon('alert')}<div>${error}</div></div>` : ''}
+    <h1 style="margin-bottom:24px">Log in</h1>
+    ${error ? html`<div class="notice notice-danger" role="alert">${error}</div>` : ''}
     <form method="post" action="/login" class="stack">
       ${csrfField(ctx)}
       <input type="hidden" name="next" value="${next}">
@@ -83,28 +64,30 @@ function login(ctx, { values, error, next }) {
         ${passwordInput('password', 'password', 'current-password', {})}
       </div>
       <button class="btn btn-primary btn-block btn-lg" type="submit">Log in</button>
-      <p class="center muted small">New here? <a href="/signup${next ? `?next=${encodeURIComponent(next)}` : ''}">Create a free account</a></p>
-      <p class="center muted small">Forgot your password? Email a moderator${ctx.config.contactEmail ? html` at <a href="mailto:${ctx.config.contactEmail}">${ctx.config.contactEmail}</a>` : ''} from the address on your account and we’ll send a reset link.</p>
-    </form>`, perks(ctx));
+    </form>
+    <div class="auth-foot">
+      <p>No account? <a href="/signup${next ? `?next=${encodeURIComponent(next)}` : ''}">Create one</a></p>
+      <p>Forgot your password? Email ${ctx.config.contactEmail ? html`<a href="mailto:${ctx.config.contactEmail}">${ctx.config.contactEmail}</a>` : 'a moderator'} from the address on your account and we’ll send a reset link.</p>
+    </div>`);
 }
 
 function resetPassword(ctx, { token, error, user }) {
   return authShell(ctx, 'Reset password', html`
     <h1>Choose a new password</h1>
-    <p class="muted">For @${user ? user.username : ''}</p>
-    ${error ? html`<div class="notice notice-danger" role="alert">${icon('alert')}<div>${error}</div></div>` : ''}
+    <p>For @${user ? user.username : ''}</p>
+    ${error ? html`<div class="notice notice-danger" role="alert">${error}</div>` : ''}
     <form method="post" action="/reset/${token}" class="stack">
       ${csrfField(ctx)}
       <div class="field"><label for="password">New password</label>${passwordInput('password', 'password', 'new-password', {})}</div>
       <button class="btn btn-primary btn-block" type="submit">Save password</button>
-    </form>`, perks(ctx));
+    </form>`);
 }
 
 function settings(ctx, { values, errors, section }) {
   const u = ctx.user;
   const body = html`
   <div class="container narrow">
-    <header class="page-head"><h1>Settings</h1><p class="muted">Manage your public profile and account.</p></header>
+    <header class="page-head"><h1>Settings</h1></header>
 
     <form method="post" action="/settings/profile" class="panel stack" id="profile">
       ${csrfField(ctx)}
@@ -113,11 +96,10 @@ function settings(ctx, { values, errors, section }) {
         <label for="display_name">Display name</label>
         <input id="display_name" name="display_name" required maxlength="50" value="${values.display_name}"${invalid(errors, 'display_name')}>
         ${fieldError(errors, 'display_name')}
-        <p class="hint">Shown on your uploads and used in attribution credits.</p>
       </div>
       <div class="field">
         <label for="bio">Bio</label>
-        <textarea id="bio" name="bio" rows="4" maxlength="500" placeholder="Editor based in… Specializing in…">${values.bio}</textarea>
+        <textarea id="bio" name="bio" rows="4" maxlength="500" >${values.bio}</textarea>
       </div>
       <div class="field">
         <label for="website">Website or portfolio</label>
@@ -125,11 +107,11 @@ function settings(ctx, { values, errors, section }) {
         ${fieldError(errors, 'website')}
       </div>
       <div class="field">
-        <label for="email">Email <span class="muted">(private)</span></label>
+        <label for="email">Email <span class="muted">private</span></label>
         <input id="email" name="email" type="email" maxlength="200" value="${values.email}"${invalid(errors, 'email')}>
         ${fieldError(errors, 'email')}
       </div>
-      <div class="btn-row"><button class="btn btn-primary" type="submit">Save profile</button><a class="btn btn-ghost" href="/u/${u.username}">View profile</a></div>
+      <div class="btn-row"><button class="btn btn-primary" type="submit">Save</button><a class="link-muted small" href="/u/${u.username}">View profile</a></div>
     </form>
 
     <form method="post" action="/settings/password" class="panel stack" id="password">
@@ -145,17 +127,17 @@ function settings(ctx, { values, errors, section }) {
         ${passwordInput('new-password', 'password', 'new-password', errors)}
         ${fieldError(errors, 'password')}
       </div>
-      <div><button class="btn btn-secondary" type="submit">Update password</button></div>
+      <div><button class="btn" type="submit">Change password</button></div>
     </form>
 
     <form method="post" action="/settings/delete" class="panel stack danger-zone" id="delete" data-confirm="This permanently deletes your account and every asset you uploaded. Continue?">
       ${csrfField(ctx)}
       <h2 class="panel-title">Delete account</h2>
-      <p class="muted">Permanently deletes your account and all of your uploads. Share links will stop working. This can’t be undone.</p>
-      ${errors.delete ? html`<div class="notice notice-danger">${icon('alert')}<div>${errors.delete}</div></div>` : ''}
+      <p class="muted">Deletes your account and every upload. Share links stop working. This can’t be undone.</p>
+      ${errors.delete ? html`<div class="notice notice-danger">${errors.delete}</div>` : ''}
       <div class="field"><label for="confirm">Type your username (<strong>${u.username}</strong>)</label><input id="confirm" name="confirm" autocomplete="off" required></div>
       <div class="field"><label for="delete-password">Password</label><input id="delete-password" name="password" type="password" autocomplete="current-password" required></div>
-      <div><button class="btn btn-danger" type="submit">${icon('trash')}Delete my account</button></div>
+      <div><button class="btn btn-danger" type="submit">Delete my account</button></div>
     </form>
   </div>`;
   void section;
@@ -168,10 +150,10 @@ function error(ctx, { status, title, message }) {
     noindex: true,
     body: html`<div class="container narrow center-page">
       <div class="empty">
-        <div class="error-code">${status}</div>
+        <p class="error-code">${status}</p>
         <h1>${title}</h1>
-        <p class="muted">${message}</p>
-        <div class="btn-row center"><a class="btn btn-primary" href="/">Go home</a><a class="btn btn-ghost" href="/browse">Browse assets</a></div>
+        <p>${message}</p>
+        <a class="btn" href="/">Home</a>
       </div>
     </div>`,
   });
