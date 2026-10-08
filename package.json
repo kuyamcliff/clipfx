@@ -1,0 +1,21 @@
+{
+  "name": "clipfx",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A free, nonprofit place for video editors and motion designers to share footage, templates, LUTs, sound effects and other editing assets.",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node --disable-warning=ExperimentalWarning src/server.js",
+    "dev": "node --disable-warning=ExperimentalWarning --watch src/server.js",
+    "test": "node --disable-warning=ExperimentalWarning --test --test-concurrency=1",
+    "seed": "node --disable-warning=ExperimentalWarning scripts/seed.js"
+  },
+  "engines": {
+    "node": ">=22.13"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "express": "^5.2.1",
+    "multer": "^2.4.0"
+  }
+}
