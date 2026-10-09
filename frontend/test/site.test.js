@@ -100,6 +100,27 @@ test('pages render with security headers', opts, async () => {
   assert.match((await b.get('/robots.txt')).text_, /Sitemap:/);
 });
 
+test('the /api proxy returns complete bodies even when the API compresses them', opts, async () => {
+  const zlib = require('node:zlib');
+  const big = JSON.stringify({ ok: true, items: Array.from({ length: 400 }, (_, i) => `item-${i}-${'x'.repeat(20)}`) });
+  const http = require('node:http');
+  const upstream = http.createServer((req, res) => {
+    const gz = zlib.gzipSync(big);
+    res.writeHead(200, { 'content-type': 'application/json', 'content-encoding': 'gzip', 'content-length': gz.length });
+    res.end(gz);
+  });
+  await new Promise((r) => upstream.listen(0, '127.0.0.1', r));
+  const app = createFrontend(loadConfig({ backendUrl: `http://127.0.0.1:${upstream.address().port}`, logRequests: false }), { log: quiet });
+  const srv = await listen(app);
+  try {
+    const res = await fetch(`http://127.0.0.1:${srv.address().port}/api/anything`);
+    assert.equal(await res.text(), big);
+  } finally {
+    srv.close();
+    upstream.close();
+  }
+});
+
 test('sign up through the form, then the session works', opts, async () => {
   const b = browser();
   const res = await b.signup('alice');

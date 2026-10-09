@@ -4,7 +4,9 @@
 const { Readable } = require('node:stream');
 
 const FORWARD_REQUEST_HEADERS = ['accept', 'content-type', 'content-length', 'x-csrf-token', 'origin', 'range', 'user-agent', 'if-none-match', 'if-modified-since'];
-const FORWARD_RESPONSE_HEADERS = ['content-type', 'content-length', 'content-range', 'content-disposition', 'accept-ranges', 'cache-control', 'etag', 'last-modified', 'location', 'retry-after', 'x-robots-tag', 'content-security-policy'];
+// No content-length/content-encoding: fetch() has already decompressed the body, so the
+// upstream length would be wrong and truncate the response.
+const FORWARD_RESPONSE_HEADERS = ['content-type', 'content-range', 'content-disposition', 'accept-ranges', 'cache-control', 'etag', 'last-modified', 'location', 'retry-after', 'x-robots-tag', 'content-security-policy'];
 
 function clientIp(req) {
   const real = req.get('x-real-ip');
