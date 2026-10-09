@@ -38,7 +38,10 @@ module.exports = function userRoutes(app, ctx) {
 
   app.get('/api/me/assets', requireUser, async (req, res) => {
     const result = await models.assets.list({ userId: req.user.id, includeUnlisted: true, anyStatus: true, includeBanned: true, page: pageOf(req.query), perPage: 30 });
-    result.items.forEach((a) => { a.shareUrl = ctx.absolute(req, `/a/${a.slug}`); });
+    result.items.forEach((a) => {
+      a.shareUrl = ctx.absolute(req, `/a/${a.slug}`);
+      if (a.status !== 'active') ctx.hideMedia(a);
+    });
     res.ok({ result, stats: models.users.stats(req.user.id), used: models.users.storageUsed(req.user.id), quota: config.userQuota });
   });
 

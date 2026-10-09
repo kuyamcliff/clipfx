@@ -1,5 +1,7 @@
 'use strict';
 
+const { quarantine, release } = require('../quarantine');
+
 module.exports = function adminRoutes(app, ctx) {
   const { models, storage, requireAdmin } = ctx;
 
@@ -23,10 +25,12 @@ module.exports = function adminRoutes(app, ctx) {
     return a;
   };
 
-  function removeAsset(a, reason, block, adminId) {
+  async function removeAsset(a, reason, block, adminId) {
+    const wasActive = a.status === 'active';
     models.assets.setStatus(a.id, 'removed', reason);
     if (block) models.assets.blockHash(a.file_sha256, reason);
     models.reports.resolveAllFor(a.id, 'actioned', adminId);
+    if (wasActive) await quarantine(models, storage, a, ctx.log);
   }
 
   app.post('/api/admin/reports/:id/dismiss', requireAdmin, (req, res) => {
@@ -34,25 +38,26 @@ module.exports = function adminRoutes(app, ctx) {
     res.ok({ message: 'Report dismissed.' });
   });
 
-  app.post('/api/admin/reports/:id/remove', requireAdmin, (req, res) => {
+  app.post('/api/admin/reports/:id/remove', requireAdmin, async (req, res) => {
     const r = models.reports.byId(Number(req.params.id));
     if (!r) return res.fail(404, 'That report no longer exists.');
     const a = models.assets.rawById(r.asset_id);
-    if (a) removeAsset(a, String(req.body.reason || r.reason).slice(0, 200), !!req.body.block, req.user.id);
+    if (a) await removeAsset(a, String(req.body.reason || r.reason).slice(0, 200), !!req.body.block, req.user.id);
     return res.ok({ message: 'Asset removed and reports resolved.' });
   });
 
-  app.post('/api/admin/assets/:id/remove', requireAdmin, (req, res) => {
+  app.post('/api/admin/assets/:id/remove', requireAdmin, async (req, res) => {
     const a = asset(req, res);
     if (!a) return undefined;
-    removeAsset(a, String(req.body.reason || 'guidelines').slice(0, 200), !!req.body.block, req.user.id);
+    await removeAsset(a, String(req.body.reason || 'guidelines').slice(0, 200), !!req.body.block, req.user.id);
     return res.ok({ message: `Removed “${a.title}”.` });
   });
 
-  app.post('/api/admin/assets/:id/restore', requireAdmin, (req, res) => {
+  app.post('/api/admin/assets/:id/restore', requireAdmin, async (req, res) => {
     const a = asset(req, res);
     if (!a) return undefined;
     models.assets.setStatus(a.id, 'active', null);
+    if (a.status !== 'active') await release(models, storage, a, ctx.log);
     if (a.file_sha256) models.assets.unblockHash(a.file_sha256);
     return res.ok({ message: `Restored “${a.title}”.` });
   });

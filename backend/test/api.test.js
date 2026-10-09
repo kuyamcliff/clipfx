@@ -246,6 +246,26 @@ test('reports, removal and blocking re-uploads of the same file', async () => {
   assert.equal(srv.models.assets.rowBySlug(again.json_.slug).status, 'removed');
 });
 
+test('removing an asset moves its files so shared links stop working; restoring brings it back', async () => {
+  const { slug } = (await bob.createAsset(baseFields({ title: 'Takedown Test' }), { file: { name: 'take.zip', data: Buffer.from('PK takedown') }, thumbnail: { name: 't.png', data: png } })).json_;
+  const before = srv.models.assets.rowBySlug(slug);
+  const id = before.id;
+  assert.equal((await alice.post(`/api/admin/assets/${id}/remove`, { reason: 'Copyright' })).status, 200);
+  const removed = srv.models.assets.rowBySlug(slug);
+  assert.ok(!fileExists(before.file_key) && !fileExists(before.thumb_key), 'old keys are gone');
+  assert.ok(fileExists(removed.file_key) && removed.file_key.startsWith('x/'));
+  const ownerView = (await bob.get(`/api/assets/${slug}`)).json_.asset;
+  assert.equal(ownerView.thumbUrl, null, 'the uploader no longer gets media links for a removed asset');
+  assert.ok((await alice.get(`/api/assets/${slug}`)).json_.asset.thumbUrl, 'moderators still do');
+
+  assert.equal((await alice.post(`/api/admin/assets/${id}/restore`)).status, 200);
+  const restored = srv.models.assets.rowBySlug(slug);
+  assert.equal(restored.status, 'active');
+  assert.ok(restored.file_key.startsWith('f/') && fileExists(restored.file_key));
+  const dl = await anon.get(`/api/assets/${slug}/download`);
+  assert.equal((await anon.get(dl.headers.get('location'))).body_.toString(), 'PK takedown');
+});
+
 test('banning hides a user and their uploads', async () => {
   const carol = client(srv.base);
   await carol.signup('carol');

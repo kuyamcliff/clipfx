@@ -27,19 +27,18 @@ const extOfKey = (key) => (/\.([a-z0-9]+)$/i.exec(key || '') || [])[1] || '';
 // Signed URLs for everything a page shows inline. Download URLs are issued separately, per click.
 async function mediaUrls(row, storage) {
   const out = { thumbUrl: null, videoSrc: null, audioSrc: null, imageSrc: null };
-  const url = (key, contentType) => storage.urlFor(key, { contentType, stable: true });
-  if (row.thumb_key) out.thumbUrl = await url(row.thumb_key, MEDIA_MIME[extOfKey(row.thumb_key)]);
+  const url = (key, contentType, kind) => storage.urlFor(key, { contentType, kind, stable: true });
+  if (row.thumb_key) out.thumbUrl = await url(row.thumb_key, MEDIA_MIME[extOfKey(row.thumb_key)], 'image');
   if (row.preview_key) {
-    const src = await url(row.preview_key, MEDIA_MIME[row.preview_ext]);
-    if (IMAGE_EXTS.has(row.preview_ext)) out.imageSrc = src;
-    else if (row.preview_ext === 'mp3') out.audioSrc = src;
-    else out.videoSrc = src;
+    if (IMAGE_EXTS.has(row.preview_ext)) out.imageSrc = await url(row.preview_key, MEDIA_MIME[row.preview_ext], 'image');
+    else if (row.preview_ext === 'mp3') out.audioSrc = await url(row.preview_key, MEDIA_MIME.mp3, 'audio');
+    else out.videoSrc = await url(row.preview_key, MEDIA_MIME[row.preview_ext], 'video');
   }
   const type = FILE_TYPES[row.file_ext] || {};
   if (type.inline) {
-    if (row.file_kind === 'video' && !out.videoSrc && WEB_VIDEO.has(row.file_ext)) out.videoSrc = await url(row.file_key, type.mime);
-    if (row.file_kind === 'audio' && !out.audioSrc) out.audioSrc = await url(row.file_key, type.mime);
-    if (row.file_kind === 'image' && !out.imageSrc) out.imageSrc = await url(row.file_key, type.mime);
+    if (row.file_kind === 'video' && !out.videoSrc && WEB_VIDEO.has(row.file_ext)) out.videoSrc = await url(row.file_key, type.mime, 'video');
+    if (row.file_kind === 'audio' && !out.audioSrc) out.audioSrc = await url(row.file_key, type.mime, 'audio');
+    if (row.file_kind === 'image' && !out.imageSrc) out.imageSrc = await url(row.file_key, type.mime, 'image');
   }
   if (!out.thumbUrl && out.imageSrc) out.thumbUrl = out.imageSrc;
   return out;

@@ -7,6 +7,7 @@ const { execFile, spawnSync } = require('node:child_process');
 const path = require('node:path');
 const fsp = require('node:fs/promises');
 const { sha256Stream } = require('./storage');
+const { quarantine } = require('./quarantine');
 
 const WEB_CODECS = new Set(['h264', 'vp8', 'vp9', 'av1']);
 const WEB_CONTAINERS = new Set(['mp4', 'm4v', 'webm']);
@@ -130,6 +131,7 @@ function createMedia({ config, models, storage, log = console }) {
 
     if (update.file_sha256 && models.assets.isBlockedHash(update.file_sha256)) {
       models.assets.setStatus(id, 'removed', 'Same file as one removed earlier');
+      await quarantine(models, storage, models.assets.rawById(id), log);
       log.warn(`[media] asset ${id} matches a blocked file and was removed`);
     }
   }

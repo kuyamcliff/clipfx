@@ -14,9 +14,13 @@ const opts = { skip: !env.R2_TEST_ENDPOINT && 'set R2_TEST_ENDPOINT to run' };
 test('R2 adapter: presigned PUT, multipart, reads, signed GET, delete', opts, async () => {
   const s = createR2Storage({ r2: { endpoint: env.R2_TEST_ENDPOINT, accessKeyId: env.R2_TEST_KEY, secretAccessKey: env.R2_TEST_SECRET, bucket: env.R2_TEST_BUCKET, region: 'auto' } });
   const prefix = `test-${crypto.randomBytes(4).toString('hex')}`;
+  const created = [];
+  let uploadId;
+  try {
 
   const png = Buffer.concat([Buffer.from('89504e470d0a1a0a0000000d49484452', 'hex'), Buffer.alloc(100)]);
   const key = `${prefix}/thumb.png`;
+  created.push(key);
   const { url, headers } = await s.presignPut(key, { contentType: 'image/png', contentLength: png.length });
   assert.match(new URL(url).searchParams.get('X-Amz-SignedHeaders'), /content-length.*content-type/);
   assert.ok(![...new URL(url).searchParams.keys()].some((k) => /checksum/i.test(k)), 'no checksum params browsers can’t satisfy');
@@ -33,7 +37,8 @@ test('R2 adapter: presigned PUT, multipart, reads, signed GET, delete', opts, as
   const part = 5 * 1024 * 1024;
   const big = crypto.randomBytes(part + 1234);
   const bigKey = `${prefix}/big.bin`;
-  const uploadId = await s.createMultipart(bigKey, 'application/octet-stream');
+  created.push(bigKey);
+  uploadId = await s.createMultipart(bigKey, 'application/octet-stream');
   const etags = [];
   for (const [n, chunk] of [[1, big.subarray(0, part)], [2, big.subarray(part)]]) {
     const res = await fetch(await s.presignPart(bigKey, uploadId, n, chunk.length), { method: 'PUT', body: chunk });
@@ -41,10 +46,15 @@ test('R2 adapter: presigned PUT, multipart, reads, signed GET, delete', opts, as
     etags.push({ number: n, etag: res.headers.get('etag') });
   }
   await s.completeMultipart(bigKey, uploadId, etags.reverse());
+  uploadId = null;
   assert.equal((await s.stat(bigKey)).size, big.length);
   assert.equal(await sha256Stream(await s.readStream(bigKey)), crypto.createHash('sha256').update(big).digest('hex'));
 
   await s.remove(key);
-  await s.remove(bigKey);
   assert.equal(await s.stat(key), null);
+  } finally {
+    // Leave the bucket as we found it, even when an assertion fails.
+    if (uploadId) await s.abortMultipart(`${prefix}/big.bin`, uploadId);
+    for (const k of created) await s.remove(k).catch(() => {});
+  }
 });

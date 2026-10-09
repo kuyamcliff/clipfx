@@ -64,6 +64,7 @@ function createLocalStorage(config) {
   return {
     kind: 'local',
     origin: '',
+    origins: [],
     newKey,
     abs,
     verify,
@@ -130,6 +131,11 @@ function createLocalStorage(config) {
     },
     async readStream(key) {
       return fs.createReadStream(abs(key));
+    },
+    async move(fromKey, toKey) {
+      const dest = abs(toKey);
+      await fsp.mkdir(path.dirname(dest), { recursive: true });
+      await fsp.rename(abs(fromKey), dest);
     },
     async putFile(localPath, key) {
       const dest = abs(key);

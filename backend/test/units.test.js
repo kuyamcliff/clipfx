@@ -66,3 +66,18 @@ test('production refuses local storage uploads unless allowed', () => {
     process.env.NODE_ENV = prev;
   }
 });
+
+test('R2 public domains: media and downloads use custom domains, uploads stay signed', async () => {
+  const { createR2Storage } = require('../src/storage/r2');
+  const s = createR2Storage({ r2: {
+    endpoint: 'https://acc.r2.cloudflarestorage.com', accessKeyId: 'a', secretAccessKey: 'b', bucket: 'clipfx', region: 'auto',
+    public: { image: 'https://image.example', video: 'https://video.example', audio: '', download: 'https://download.example' },
+  } });
+  assert.equal(await s.urlFor('t/ab/x.jpg', { kind: 'image' }), 'https://image.example/t/ab/x.jpg');
+  assert.equal(await s.urlFor('f/ab/x.zip', { kind: 'download', attachment: true, filename: 'x.zip' }), 'https://download.example/f/ab/x.zip');
+  assert.match(await s.urlFor('f/ab/x.mp3', { kind: 'audio' }), /^https:\/\/acc\.r2\.cloudflarestorage\.com\/clipfx\/f\/ab\/x\.mp3\?X-Amz-/, 'falls back to a signed URL');
+  const put = await s.presignPut('f/ab/x.zip', { contentType: 'application/octet-stream', contentLength: 10, contentDisposition: 'attachment; filename="x.zip"' });
+  assert.equal(new URL(put.url).searchParams.get('X-Amz-SignedHeaders'), 'content-disposition;content-length;content-type;host');
+  assert.equal(put.headers['Content-Disposition'], 'attachment; filename="x.zip"');
+  assert.deepEqual(s.origins, ['https://acc.r2.cloudflarestorage.com', 'https://image.example', 'https://video.example', 'https://download.example']);
+});

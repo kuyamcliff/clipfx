@@ -19,7 +19,7 @@ async function main() {
       CORSRules: [{
         AllowedOrigins: origins,
         AllowedMethods: ['GET', 'HEAD', 'PUT'],
-        AllowedHeaders: ['content-type'],
+        AllowedHeaders: ['content-type', 'content-disposition'],
         ExposeHeaders: ['ETag'],
         MaxAgeSeconds: 3600,
       }],

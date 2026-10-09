@@ -100,6 +100,7 @@ module.exports = function assetRoutes(app, ctx) {
       models.assets.list({ userId: row.user_id, excludeId: row.id, perPage: 4 }),
       models.assets.list({ category: row.category, excludeId: row.id, perPage: 8, sort: 'trending' }),
     ]);
+    if (row.status !== 'active' && !ctx.isAdmin(req)) ctx.hideMedia(asset);
     res.ok({
       asset: { ...asset, isOwner: owner, canEdit },
       more: more.items,
@@ -117,7 +118,7 @@ module.exports = function assetRoutes(app, ctx) {
     const { row } = found;
     const range = req.get('range');
     if ((!range || /^bytes=0-/.test(range)) && !ctx.seenDownload(`${req.clientIp}|${row.id}`)) models.assets.addDownload(row.id);
-    const url = await storage.urlFor(row.file_key, { attachment: true, filename: row.file_name, contentType: 'application/octet-stream', ttl: 6 * 3600 });
+    const url = await storage.urlFor(row.file_key, { kind: 'download', attachment: true, filename: row.file_name, contentType: 'application/octet-stream', ttl: 6 * 3600 });
     res.redirect(302, url);
   });
 
@@ -251,6 +252,7 @@ module.exports = function assetRoutes(app, ctx) {
     return res.ok({ message: 'Thanks for the report. A moderator will review it soon.' });
   });
 
+  ctx.hideMedia = (a) => Object.assign(a, { thumbUrl: null, videoSrc: null, audioSrc: null, imageSrc: null });
   ctx.REPORT_REASONS = REPORT_REASONS;
   ctx.SORTS = SORTS;
 };
