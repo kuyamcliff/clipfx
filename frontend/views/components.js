@@ -1,5 +1,5 @@
 'use strict';
-const { html, raw, formatCount, formatBytes } = require('../html');
+const { html, raw, formatCount, formatBytes } = require('../../backend/src/html');
 
 const ICONS = {
   search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',

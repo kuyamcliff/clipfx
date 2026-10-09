@@ -1,5 +1,5 @@
 'use strict';
-const { html, raw } = require('../html');
+const { html, raw } = require('../../backend/src/html');
 const { icon, csrfField } = require('./components');
 
 function logo(siteName) {

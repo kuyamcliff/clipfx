@@ -84,31 +84,41 @@ proxy_read_timeout 3h;
 
 See [`.env.example`](.env.example). The important ones: `BASE_URL`, `DATA_DIR`, `TRUST_PROXY`, `DONATE_URL`, `CONTACT_EMAIL`, `MAX_UPLOAD_MB`, `USER_QUOTA_MB`, `ADMIN_USERNAMES`.
 
-## Architecture
+## Project layout
 
-- **Express 5**, server-rendered HTML through a small auto-escaping template helper (`src/html.js`)
+The repo is split into two folders. One `package.json` at the root runs both.
+
+```
+frontend/                what the browser sees
+  views/                 server-rendered HTML templates (layout, pages, components)
+  public/                static files served at /static: css/, js/, favicon
+
+backend/                 the server
+  src/
+    server.js            entry point
+    app.js               middleware, sessions, CSRF, wiring
+    config.js            environment settings
+    db.js, models.js     SQLite schema and queries
+    storage.js           files on disk
+    media.js             ffmpeg processing queue
+    security.js          passwords, cookies, headers, rate limits
+    catalog.js           categories, software, licenses, accepted file types
+    html.js              auto-escaping template helper used by the views
+    routes/              pages, auth, browse, assets, account, admin
+  scripts/seed.js        demo content
+  test/                  node:test suites
+```
+
+- **Express 5**, server-rendered HTML through a small auto-escaping template helper
 - **SQLite** via Node's built-in `node:sqlite`, so no native modules to compile
 - Files on local disk under `DATA_DIR/uploads`, sharded by random key; original filenames are only used in `Content-Disposition`
-- Background media queue (`src/media.js`) runs ffmpeg one job at a time and resumes after restarts
-
-```
-src/
-  app.js          middleware, sessions, CSRF, wiring
-  catalog.js      categories, software, licenses, accepted file types
-  models.js       database queries
-  media.js        ffmpeg processing queue
-  routes/         pages, auth, browse, assets, account, admin
-  views/          HTML templates
-public/           CSS, JS, favicon
-scripts/seed.js   demo content
-test/             node:test suites
-```
+- Background media queue runs ffmpeg one job at a time and resumes after restarts
 
 ## Scaling notes
 
 This runs as a single process, which is fine for a community site on one small VPS. When it outgrows that:
 - put a CDN in front of `/m/*` and `/a/*/download` (responses are cacheable and support range requests)
-- move uploads to S3-compatible object storage (swap `src/storage.js`)
+- move uploads to S3-compatible object storage (swap `backend/src/storage.js`)
 - move rate limiting to Redis if you run several instances
 
 ## Contributing

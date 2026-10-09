@@ -20,7 +20,7 @@ function trustProxy(value) {
 
 function loadConfig(overrides = {}) {
   const env = process.env;
-  const root = path.resolve(__dirname, '..');
+  const root = path.resolve(__dirname, '..', '..');
   const production = env.NODE_ENV === 'production';
   const dataDir = path.resolve(overrides.dataDir || env.DATA_DIR || path.join(root, 'data'));
 

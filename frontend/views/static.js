@@ -1,7 +1,7 @@
 'use strict';
-const { html, formatCount, formatBytes } = require('../html');
+const { html, formatCount, formatBytes } = require('../../backend/src/html');
 const { layout } = require('./layout');
-const { LICENSES, FILE_TYPES, KINDS } = require('../catalog');
+const { LICENSES, FILE_TYPES, KINDS } = require('../../backend/src/catalog');
 
 const contact = (config) => (config.contactEmail
   ? html`<a href="mailto:${config.contactEmail}">${config.contactEmail}</a>`

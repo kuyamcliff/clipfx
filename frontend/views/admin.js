@@ -1,5 +1,5 @@
 'use strict';
-const { html, formatCount, formatBytes, timeAgo, formatDate } = require('../html');
+const { html, formatCount, formatBytes, timeAgo, formatDate } = require('../../backend/src/html');
 const { layout } = require('./layout');
 const { avatar, csrfField, emptyState, pagination } = require('./components');
 

@@ -1,5 +1,5 @@
 node_modules
 data
-test
+backend/test
 .git
 *.md
