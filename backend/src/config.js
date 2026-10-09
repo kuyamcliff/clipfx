@@ -86,6 +86,8 @@ function loadConfig(overrides = {}) {
   config.uploadDir = overrides.uploadDir || path.join(config.dataDir, 'uploads');
   config.tmpDir = overrides.tmpDir || path.join(config.dataDir, 'tmp');
   config.dbFile = overrides.dbFile || env.DB_FILE || path.join(config.dataDir, 'clipfx.db');
+  // In production, files must go to R2. Local disk is for development (or an explicit opt-in).
+  config.uploadsEnabled = overrides.uploadsEnabled ?? (config.storage === 'r2' || !production || bool(env.ALLOW_LOCAL_STORAGE, false));
   config.storageSecret = overrides.storageSecret || persistentSecret(env.STORAGE_SECRET, path.join(config.dataDir, '.storage-secret'));
 
   if (config.storage === 'r2') {

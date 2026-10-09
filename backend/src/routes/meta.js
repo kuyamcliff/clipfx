@@ -18,6 +18,7 @@ module.exports = function metaRoutes(app, ctx) {
       userQuota: config.userQuota,
       storageOrigin: storage.origin,
       mediaProcessing: media.available,
+      uploadsEnabled: config.uploadsEnabled,
     },
     catalog: {
       categories: catalog.CATEGORIES,

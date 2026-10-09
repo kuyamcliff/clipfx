@@ -37,6 +37,7 @@ module.exports = function uploadRoutes(app, ctx) {
   }
 
   app.post('/api/uploads', requireUser, rate('upload-tickets', 120, 3600 * 1000), async (req, res) => {
+    if (!config.uploadsEnabled) return res.fail(503, 'Uploads aren’t open yet. Please check back soon.');
     const files = Array.isArray(req.body.files) ? req.body.files : [];
     if (!files.length || files.length > 3) return res.fail(400, 'Send between one and three files.');
     const errors = {};

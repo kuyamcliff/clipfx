@@ -269,6 +269,13 @@ function progressBlock() {
 }
 
 function upload(ctx, { values, errors, limits }) {
+  if (ctx.config.uploadsEnabled === false) {
+    return layout(ctx, {
+      title: 'Upload', noindex: true,
+      body: html`<div class="container narrow"><header class="page-head"><h1>Upload</h1></header>
+        <div class="notice">Uploads aren’t open yet. Storage is still being set up, so please check back soon.</div></div>`,
+    });
+  }
   const remaining = Math.max(0, limits.quota - limits.used);
   const body = html`
   <div class="container">

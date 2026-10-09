@@ -52,3 +52,17 @@ test('magic-byte sniffing and content disposition', () => {
   assert.equal(sniff(Buffer.from('<html><body>hi</body>')), null);
   assert.equal(contentDisposition('attachment', 'Clip "1" ü.mp4'), 'attachment; filename="Clip _1_ _.mp4"; filename*=UTF-8\'\'Clip%20%221%22%20%C3%BC.mp4');
 });
+
+test('production refuses local storage uploads unless allowed', () => {
+  const { loadConfig } = require('../src/config');
+  const os = require('node:os');
+  const prev = process.env.NODE_ENV;
+  process.env.NODE_ENV = 'production';
+  try {
+    const dataDir = require('node:fs').mkdtempSync(require('node:path').join(os.tmpdir(), 'cfx-cfg-'));
+    assert.equal(loadConfig({ dataDir, storage: 'local' }).uploadsEnabled, false);
+    assert.equal(loadConfig({ dataDir, storage: 'r2', r2: { endpoint: 'https://x.r2.cloudflarestorage.com', accessKeyId: 'a', secretAccessKey: 'b', bucket: 'c' } }).uploadsEnabled, true);
+  } finally {
+    process.env.NODE_ENV = prev;
+  }
+});
