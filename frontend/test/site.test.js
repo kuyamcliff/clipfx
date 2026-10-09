@@ -97,6 +97,11 @@ test('pages render with security headers', opts, async () => {
   assert.equal((await b.get('/nope')).status, 404);
   assert.equal((await b.get('/upload')).status, 302);
   assert.equal((await b.get('/static/css/style.css')).status, 200);
+  const home = (await b.get('/')).text_;
+  const css = /href="(\/static\/css\/style\.css\?v=[\w-]+)"/.exec(home);
+  assert.ok(css, 'stylesheet URL carries a version so caches pick up new deploys');
+  assert.equal((await b.get(css[1])).status, 200);
+  assert.match(home, /src="\/static\/js\/app\.js\?v=[\w-]+"/);
   assert.match((await b.get('/robots.txt')).text_, /Sitemap:/);
 });
 

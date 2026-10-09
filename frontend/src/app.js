@@ -114,6 +114,7 @@ function createFrontend(config, { log = console } = {}) {
       req.ctx = {
         config: m.config, catalog: m.catalog, user: s.user || null, openReports: s.openReports || 0,
         csrf: req.cookies.csrf, flash, path: req.path, query: req.query,
+        asset: (p) => `${p}?v=${config.assetVersion}`,
         absolute: (p) => (/^https?:\/\//.test(p) ? p : `${origin}${p}`),
         decorate: (a) => decorate(a, m.catalog),
         decorateAll: (items) => decorateAll(items, m.catalog),
