@@ -1,6 +1,8 @@
 'use strict';
 const { DatabaseSync } = require('node:sqlite');
 
+// Local development database (and tests). Production uses Postgres (see postgres.js).
+
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS users (
   id INTEGER PRIMARY KEY,
@@ -135,23 +137,36 @@ CREATE TABLE IF NOT EXISTS blocked_hashes (
 );
 `;
 
-function openDb(file) {
+function openSqlite(file) {
   const db = new DatabaseSync(file);
   db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000; PRAGMA synchronous = NORMAL;');
   db.exec(SCHEMA);
-  return db;
+  const cache = new Map();
+  const stmt = (sql) => {
+    let s = cache.get(sql);
+    if (!s) { s = db.prepare(sql); cache.set(sql, s); }
+    return s;
+  };
+  // Same async interface as the Postgres driver. Calls are synchronous underneath.
+  return {
+    dialect: 'sqlite',
+    async get(sql, params = []) { return stmt(sql).get(...params); },
+    async all(sql, params = []) { return stmt(sql).all(...params); },
+    async run(sql, params = []) { const r = stmt(sql).run(...params); return { changes: Number(r.changes) }; },
+    // Several writes as one transaction. Runs synchronously, so nothing can interleave.
+    async batch(statements) {
+      db.exec('BEGIN');
+      try {
+        for (const [sql, params = []] of statements) stmt(sql).run(...params);
+        db.exec('COMMIT');
+      } catch (err) {
+        db.exec('ROLLBACK');
+        throw err;
+      }
+    },
+    isUniqueViolation: (err, column) => /UNIQUE constraint failed/.test(err.message) && (!column || err.message.includes(`.${column}`)),
+    async close() { db.close(); },
+  };
 }
 
-function transaction(db, fn) {
-  db.exec('BEGIN');
-  try {
-    const result = fn();
-    db.exec('COMMIT');
-    return result;
-  } catch (err) {
-    db.exec('ROLLBACK');
-    throw err;
-  }
-}
-
-module.exports = { openDb, transaction };
+module.exports = { openSqlite };

@@ -63,20 +63,20 @@ module.exports = function assetRoutes(app, ctx) {
       models.assets.list({ perPage: 12 }),
       models.assets.list({ sort: 'trending', perPage: 8 }),
     ]);
-    res.ok({ stats: models.assets.siteStats(), categories: models.assets.categoryCounts(), fresh: fresh.items, trending: trending.items });
+    res.ok({ stats: await models.assets.siteStats(), categories: await models.assets.categoryCounts(), fresh: fresh.items, trending: trending.items });
   });
 
   app.get('/api/assets', async (req, res) => {
     const filters = readFilters(req.query);
     const result = await models.assets.list({ ...filters, perPage: 24 });
-    res.ok({ filters, result, sorts: SORTS, categories: models.assets.categoryCounts() });
+    res.ok({ filters, result, sorts: SORTS, categories: await models.assets.categoryCounts() });
   });
 
   // ---- One asset -------------------------------------------------------------------
 
   // Loads an asset the current user may see. Sends the error response itself when not.
   async function load(req, res, { allowRemoved = false } = {}) {
-    const row = models.assets.rowBySlug(req.params.slug);
+    const row = await models.assets.rowBySlug(req.params.slug);
     if (!row) { res.fail(404, 'This asset doesn’t exist. Double-check the link.'); return null; }
     const owner = !!(req.user && req.user.id === row.user_id);
     const hidden = row.status !== 'active' || row.user_banned;
@@ -92,7 +92,7 @@ module.exports = function assetRoutes(app, ctx) {
     if (!found) return;
     const { row, owner, canEdit } = found;
     if (req.query.view === '1' && !owner && row.status === 'active' && !ctx.seenView(`${req.clientIp}|${row.id}`)) {
-      models.assets.addView(row.id);
+      await models.assets.addView(row.id);
       row.views++;
     }
     const [asset, more, related] = await Promise.all([
@@ -105,7 +105,7 @@ module.exports = function assetRoutes(app, ctx) {
       asset: { ...asset, isOwner: owner, canEdit },
       more: more.items,
       related: related.items.filter((r) => r.user_id !== row.user_id).slice(0, 4),
-      saved: req.user ? models.favorites.has(req.user.id, row.id) : false,
+      saved: req.user ? await models.favorites.has(req.user.id, row.id) : false,
       shareUrl: ctx.absolute(req, `/a/${row.slug}`),
       reasons: REPORT_REASONS,
     });
@@ -117,7 +117,7 @@ module.exports = function assetRoutes(app, ctx) {
     if (!found) return;
     const { row } = found;
     const range = req.get('range');
-    if ((!range || /^bytes=0-/.test(range)) && !ctx.seenDownload(`${req.clientIp}|${row.id}`)) models.assets.addDownload(row.id);
+    if ((!range || /^bytes=0-/.test(range)) && !ctx.seenDownload(`${req.clientIp}|${row.id}`)) await models.assets.addDownload(row.id);
     const url = await storage.urlFor(row.file_key, { kind: 'download', attachment: true, filename: row.file_name, contentType: 'application/octet-stream', ttl: 6 * 3600 });
     res.redirect(302, url);
   });
@@ -137,7 +137,7 @@ module.exports = function assetRoutes(app, ctx) {
 
     const f = files.file.upload;
     const kind = FILE_TYPES[f.ext].kind;
-    const created = models.assets.create({
+    const created = await models.assets.create({
       ...values,
       userId: req.user.id,
       fileName: f.file_name, fileKey: f.key, fileSize: f.size, fileExt: f.ext, fileKind: kind,
@@ -149,7 +149,7 @@ module.exports = function assetRoutes(app, ctx) {
       duration: numberHint(b.duration, 7 * 86400),
       mediaStatus: media.needsMedia(kind) ? 'pending' : 'none',
     });
-    ctx.releaseUploads(files);
+    await ctx.releaseUploads(files);
     media.enqueue(created.id);
     return res.ok({ slug: created.slug, url: `/a/${created.slug}`, shareUrl: ctx.absolute(req, `/a/${created.slug}`) }, 201);
   });
@@ -203,9 +203,9 @@ module.exports = function assetRoutes(app, ctx) {
     const reprocess = media.needsMedia(kind) && (files.file || set.thumb_key === null || set.preview_key === null);
     if (reprocess) set.media_status = 'pending';
 
-    models.assets.update(old.id, values);
-    models.assets.setFields(old.id, set);
-    ctx.releaseUploads(files);
+    await models.assets.update(old.id, values);
+    await models.assets.setFields(old.id, set);
+    await ctx.releaseUploads(files);
     for (const k of new Set(garbage)) await storage.remove(k);
     if (files.file || reprocess) media.enqueue(old.id);
 
@@ -218,7 +218,7 @@ module.exports = function assetRoutes(app, ctx) {
   app.post('/api/assets/:slug/delete', requireUser, async (req, res) => {
     const row = await editable(req, res);
     if (!row) return undefined;
-    models.assets.remove(row.id);
+    await models.assets.remove(row.id);
     for (const k of [row.file_key, row.preview_key, row.thumb_key]) await storage.remove(k);
     const own = req.user.id === row.user_id;
     return res.ok({ message: `“${row.title}” was deleted.`, redirect: own ? '/dashboard' : '/admin?tab=assets' });
@@ -229,8 +229,8 @@ module.exports = function assetRoutes(app, ctx) {
   app.post('/api/assets/:slug/save', requireUser, rate('save', 300, 3600 * 1000), async (req, res) => {
     const found = await load(req, res);
     if (!found) return undefined;
-    const saved = models.favorites.toggle(req.user.id, found.row.id);
-    return res.ok({ saved, count: models.favorites.count(found.row.id), message: saved ? 'Saved.' : 'Removed from your saved assets.' });
+    const saved = await models.favorites.toggle(req.user.id, found.row.id);
+    return res.ok({ saved, count: await models.favorites.count(found.row.id), message: saved ? 'Saved.' : 'Removed from your saved assets.' });
   });
 
   app.post('/api/assets/:slug/report', rate('report', 15, 3600 * 1000), async (req, res) => {
@@ -248,7 +248,7 @@ module.exports = function assetRoutes(app, ctx) {
       errors.details = 'For copyright claims, describe the original work (a link helps) and leave a way to contact you.';
     }
     if (Object.keys(errors).length) return res.fail(400, 'Check the highlighted fields.', errors);
-    models.reports.create({ assetId: found.row.id, reporterId: req.user && req.user.id, ...values });
+    await models.reports.create({ assetId: found.row.id, reporterId: req.user && req.user.id, ...values });
     return res.ok({ message: 'Thanks for the report. A moderator will review it soon.' });
   });
 

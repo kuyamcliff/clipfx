@@ -33,7 +33,7 @@ module.exports = function metaRoutes(app, ctx) {
     },
   };
 
-  app.get('/api/meta', (req, res) => {
+  app.get('/api/meta', async (req, res) => {
     res.setHeader('Cache-Control', 'public, max-age=300');
     res.ok(meta);
   });
@@ -43,13 +43,13 @@ module.exports = function metaRoutes(app, ctx) {
     role: u.role, banned: !!u.banned, created_at: u.created_at, ...(self ? { email: u.email || '' } : {}),
   });
 
-  app.get('/api/session', (req, res) => {
+  app.get('/api/session', async (req, res) => {
     res.ok({
       user: ctx.publicUser(req.user, { self: true }),
-      openReports: ctx.isAdmin(req) ? models.reports.openCount() : 0,
+      openReports: ctx.isAdmin(req) ? await models.reports.openCount() : 0,
     });
   });
 
-  app.get('/api/stats', (req, res) => res.ok({ stats: models.assets.siteStats() }));
-  app.get('/api/sitemap', (req, res) => res.ok({ assets: models.assets.sitemap() }));
+  app.get('/api/stats', async (req, res) => res.ok({ stats: await models.assets.siteStats() }));
+  app.get('/api/sitemap', async (req, res) => res.ok({ assets: await models.assets.sitemap() }));
 };

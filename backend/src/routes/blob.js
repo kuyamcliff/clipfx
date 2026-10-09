@@ -20,7 +20,7 @@ module.exports = function blobRoutes(app, ctx) {
     }
   });
 
-  const serve = (req, res, next) => {
+  const serve = async (req, res, next) => {
     const key = req.params.key.join('/');
     const p = storage.verify(key, req.query);
     if (!p || p.op !== 'get') return res.status(403).end();

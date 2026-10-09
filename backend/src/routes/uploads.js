@@ -64,7 +64,7 @@ module.exports = function uploadRoutes(app, ctx) {
     if (Object.keys(errors).length) return res.fail(400, Object.values(errors)[0], errors);
 
     const total = specs.reduce((n, s) => n + s.size, 0);
-    if (models.users.storageUsed(req.user.id) + total > config.userQuota) {
+    if (await models.users.storageUsed(req.user.id) + total > config.userQuota) {
       return res.fail(413, `This would go over your ${formatBytes(config.userQuota)} storage limit. Delete old uploads to make room.`, { file: 'Not enough storage left.' });
     }
 
@@ -84,11 +84,11 @@ module.exports = function uploadRoutes(app, ctx) {
           const len = n < count ? partSize : s.size - partSize * (count - 1);
           parts.push({ number: n, size: len, url: await storage.presignPart(key, multipartId, n, len) });
         }
-        models.uploads.create({ id, userId: req.user.id, key, field: s.field, fileName: s.name, ext: s.ext, size: s.size, contentType, multipartId, partSize });
+        await models.uploads.create({ id, userId: req.user.id, key, field: s.field, fileName: s.name, ext: s.ext, size: s.size, contentType, multipartId, partSize });
         tickets.push({ id, field: s.field, method: 'multipart', partSize, parts });
       } else {
         const { url, headers } = await storage.presignPut(key, { contentType, contentLength: s.size, contentDisposition });
-        models.uploads.create({ id, userId: req.user.id, key, field: s.field, fileName: s.name, ext: s.ext, size: s.size, contentType });
+        await models.uploads.create({ id, userId: req.user.id, key, field: s.field, fileName: s.name, ext: s.ext, size: s.size, contentType });
         tickets.push({ id, field: s.field, method: 'put', url, headers });
       }
     }
@@ -96,7 +96,7 @@ module.exports = function uploadRoutes(app, ctx) {
   });
 
   app.post('/api/uploads/:id/complete', requireUser, async (req, res) => {
-    const u = models.uploads.get(req.params.id, req.user.id);
+    const u = await models.uploads.get(req.params.id, req.user.id);
     if (!u) return res.fail(404, 'Upload not found. It may have expired; please start again.');
     if (!u.multipart_id) return res.ok();
     const parts = (Array.isArray(req.body.parts) ? req.body.parts : [])
@@ -112,16 +112,16 @@ module.exports = function uploadRoutes(app, ctx) {
       ctx.log.warn(`[uploads] complete failed for ${u.id}: ${err.message}`);
       return res.fail(400, 'The upload couldn’t be finished. Please try again.');
     }
-    models.db.prepare('UPDATE uploads SET multipart_id = NULL WHERE id = ?').run(u.id);
+    await models.uploads.markComplete(u.id);
     return res.ok();
   });
 
   app.post('/api/uploads/:id/abort', requireUser, async (req, res) => {
-    const u = models.uploads.get(req.params.id, req.user.id);
+    const u = await models.uploads.get(req.params.id, req.user.id);
     if (u) {
       if (u.multipart_id) await storage.abortMultipart(u.key, u.multipart_id);
       await storage.remove(u.key);
-      models.uploads.remove(u.id);
+      await models.uploads.remove(u.id);
     }
     res.ok();
   });
@@ -134,7 +134,7 @@ module.exports = function uploadRoutes(app, ctx) {
     const errors = {};
     for (const field of ['file', 'preview', 'thumbnail']) {
       if (!ids[field]) continue;
-      const u = models.uploads.get(ids[field], user.id);
+      const u = await models.uploads.get(ids[field], user.id);
       if (!u || u.field !== field) { errors[field] = 'That upload has expired. Please choose the file again.'; continue; }
       if (u.multipart_id) { errors[field] = 'That upload didn’t finish. Please try again.'; continue; }
       const st = await storage.stat(u.key);
@@ -152,12 +152,12 @@ module.exports = function uploadRoutes(app, ctx) {
   };
 
   // Once attached to an asset the upload row has served its purpose.
-  ctx.releaseUploads = (files) => Object.values(files).forEach((f) => models.uploads.remove(f.upload.id));
+  ctx.releaseUploads = async (files) => { for (const f of Object.values(files)) await models.uploads.remove(f.upload.id); };
   // Unused objects from a failed attempt are removed straight away.
   ctx.discardUploads = async (files) => {
     for (const f of Object.values(files)) {
       await storage.remove(f.upload.key);
-      models.uploads.remove(f.upload.id);
+      await models.uploads.remove(f.upload.id);
     }
   };
 };

@@ -18,7 +18,7 @@ before(async () => {
 });
 after(() => srv.stop());
 
-const keyOf = (slug) => srv.models.assets.rowBySlug(slug).file_key;
+const keyOf = async (slug) => (await srv.models.assets.rowBySlug(slug)).file_key;
 const fileExists = (key) => fs.existsSync(path.join(srv.config.uploadDir, key));
 
 test('meta, session and health', async () => {
@@ -38,7 +38,7 @@ test('first user becomes admin, second is a member', async () => {
   assert.equal(res.json_.user.role, 'admin');
   assert.equal((await alice.get('/api/session')).json_.user.username, 'alice');
   await bob.signup('bob');
-  assert.equal(srv.models.users.byUsername('bob').role, 'user');
+  assert.equal((await srv.models.users.byUsername('bob')).role, 'user');
 });
 
 test('signup and login validation', async () => {
@@ -92,12 +92,12 @@ test('upload straight to storage, view, download', async () => {
   assert.match(file.headers.get('content-disposition'), /^attachment; filename="leaks.mp4"/);
   assert.deepEqual(file.body_, fakeVideo.data);
   await anon.get(`/api/assets/${slug}/download`);
-  assert.equal(srv.models.assets.rowBySlug(slug).downloads, 1, 'same visitor counted once');
+  assert.equal((await srv.models.assets.rowBySlug(slug)).downloads, 1, 'same visitor counted once');
 
   const tampered = dl.headers.get('location').replace('op=get', 'op=get&x=1').replace(/sig=[^&]+/, 'sig=AAAA');
   assert.equal((await anon.get(tampered)).status, 403);
   await srv.media.idle();
-  assert.equal(srv.models.assets.rowBySlug(slug).file_sha256.length, 64, 'hash computed in background');
+  assert.equal((await srv.models.assets.rowBySlug(slug)).file_sha256.length, 64, 'hash computed in background');
 });
 
 test('big files go up in parts', async () => {
@@ -190,16 +190,16 @@ test('only the owner or a moderator can edit or delete', async () => {
   assert.equal((await bob.post(`/api/assets/${slug}/edit`, baseFields())).status, 403);
   assert.equal((await bob.post(`/api/assets/${slug}/delete`)).status, 403);
   assert.equal((await anon.post(`/api/assets/${slug}/delete`)).status, 401);
-  assert.ok(srv.models.assets.rowBySlug(slug));
+  assert.ok((await srv.models.assets.rowBySlug(slug)));
 });
 
 test('editing metadata and uploading a new version keeps the link', async () => {
   const { slug } = (await alice.createAsset(baseFields({ title: 'Version One' }), { file: fakeVideo, thumbnail: { name: 't.png', data: png } })).json_;
-  const before = srv.models.assets.rowBySlug(slug);
+  const before = (await srv.models.assets.rowBySlug(slug));
   const up = await alice.uploadFiles({ file: { name: 'v2.zip', data: Buffer.from('PK new version') } });
   const res = await alice.post(`/api/assets/${slug}/edit`, { ...baseFields({ title: 'Version Two', visibility: 'unlisted' }), uploads: up.ids });
   assert.equal(res.status, 200, res.body_.toString());
-  const after = srv.models.assets.rowBySlug(slug);
+  const after = (await srv.models.assets.rowBySlug(slug));
   assert.equal(after.title, 'Version Two');
   assert.equal(after.visibility, 'unlisted');
   assert.equal(after.file_name, 'v2.zip');
@@ -243,15 +243,15 @@ test('reports, removal and blocking re-uploads of the same file', async () => {
   const again = await bob.createAsset(baseFields({ title: 'Trying Again' }), { file: { name: 'again.zip', data } });
   assert.equal(again.status, 201);
   await srv.media.idle();
-  assert.equal(srv.models.assets.rowBySlug(again.json_.slug).status, 'removed');
+  assert.equal((await srv.models.assets.rowBySlug(again.json_.slug)).status, 'removed');
 });
 
 test('removing an asset moves its files so shared links stop working; restoring brings it back', async () => {
   const { slug } = (await bob.createAsset(baseFields({ title: 'Takedown Test' }), { file: { name: 'take.zip', data: Buffer.from('PK takedown') }, thumbnail: { name: 't.png', data: png } })).json_;
-  const before = srv.models.assets.rowBySlug(slug);
+  const before = (await srv.models.assets.rowBySlug(slug));
   const id = before.id;
   assert.equal((await alice.post(`/api/admin/assets/${id}/remove`, { reason: 'Copyright' })).status, 200);
-  const removed = srv.models.assets.rowBySlug(slug);
+  const removed = (await srv.models.assets.rowBySlug(slug));
   assert.ok(!fileExists(before.file_key) && !fileExists(before.thumb_key), 'old keys are gone');
   assert.ok(fileExists(removed.file_key) && removed.file_key.startsWith('x/'));
   const ownerView = (await bob.get(`/api/assets/${slug}`)).json_.asset;
@@ -259,7 +259,7 @@ test('removing an asset moves its files so shared links stop working; restoring 
   assert.ok((await alice.get(`/api/assets/${slug}`)).json_.asset.thumbUrl, 'moderators still do');
 
   assert.equal((await alice.post(`/api/admin/assets/${id}/restore`)).status, 200);
-  const restored = srv.models.assets.rowBySlug(slug);
+  const restored = (await srv.models.assets.rowBySlug(slug));
   assert.equal(restored.status, 'active');
   assert.ok(restored.file_key.startsWith('f/') && fileExists(restored.file_key));
   const dl = await anon.get(`/api/assets/${slug}/download`);
@@ -270,7 +270,7 @@ test('banning hides a user and their uploads', async () => {
   const carol = client(srv.base);
   await carol.signup('carol');
   const { slug } = (await carol.createAsset(baseFields({ title: 'Carol Clip' }), { file: fakeVideo })).json_;
-  const id = srv.models.users.byUsername('carol').id;
+  const id = (await srv.models.users.byUsername('carol')).id;
   assert.equal((await alice.post(`/api/admin/users/${id}/ban`)).status, 200);
   assert.equal((await anon.get(`/api/assets/${slug}`)).status, 410);
   assert.equal((await anon.get('/api/users/carol')).status, 404);
@@ -279,7 +279,7 @@ test('banning hides a user and their uploads', async () => {
 });
 
 test('password reset links from moderators', async () => {
-  const id = srv.models.users.byUsername('bob').id;
+  const id = (await srv.models.users.byUsername('bob')).id;
   const res = await alice.post(`/api/admin/users/${id}/reset`);
   const token = res.json_.link.split('/reset/')[1];
   assert.match(res.json_.link, /^http:\/\/frontend\.test\/reset\//);
@@ -303,22 +303,22 @@ test('deleting an account removes its files', async () => {
   const dave = client(srv.base);
   await dave.signup('dave');
   const { slug } = (await dave.createAsset(baseFields({ title: 'Dave Stuff' }), { file: fakeVideo })).json_;
-  const key = keyOf(slug);
+  const key = await keyOf(slug);
   assert.ok(fileExists(key));
   assert.equal((await dave.post('/api/me/delete', { confirm: 'dave', password: 'wrong' })).status, 400);
   assert.equal((await dave.post('/api/me/delete', { confirm: 'dave', password: 'correct horse battery' })).status, 200);
   assert.ok(!fileExists(key));
-  assert.equal(srv.models.users.byUsername('dave'), undefined);
+  assert.equal((await srv.models.users.byUsername('dave')), undefined);
 });
 
 test('abandoned uploads are cleaned up', async () => {
   const up = await alice.uploadFiles({ file: { name: 'forgotten.zip', data: Buffer.from('PK forgotten') } });
-  const row = srv.models.uploads.get(up.ids.file, srv.models.users.byUsername('alice').id);
+  const row = (await srv.models.uploads.get(up.ids.file, (await srv.models.users.byUsername('alice')).id));
   assert.ok(fileExists(row.key));
-  srv.models.db.prepare('UPDATE uploads SET created_at = 0 WHERE id = ?').run(row.id);
+  await srv.models.db.run('UPDATE uploads SET created_at = 0 WHERE id = ?', [row.id]);
   await srv.sweep();
   assert.ok(!fileExists(row.key));
-  assert.equal(srv.models.uploads.get(row.id, row.user_id), undefined);
+  assert.equal((await srv.models.uploads.get(row.id, row.user_id)), undefined);
 });
 
 test('client IP is only trusted from the frontend', async () => {
@@ -326,7 +326,7 @@ test('client IP is only trusted from the frontend', async () => {
   const hit = (headers) => fetch(`${srv.base}/api/assets/${slug}/download`, { headers, redirect: 'manual' });
   await hit({ 'x-client-ip': '1.1.1.1' });
   await hit({ 'x-client-ip': '2.2.2.2' }); // ignored without the secret: same IP as before
-  assert.equal(srv.models.assets.rowBySlug(slug).downloads, 1);
+  assert.equal((await srv.models.assets.rowBySlug(slug)).downloads, 1);
   await hit({ 'x-client-ip': '3.3.3.3', 'x-internal-secret': 'test-secret' });
-  assert.equal(srv.models.assets.rowBySlug(slug).downloads, 2);
+  assert.equal((await srv.models.assets.rowBySlug(slug)).downloads, 2);
 });

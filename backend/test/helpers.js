@@ -8,12 +8,16 @@ const { createApp } = require('../src/app');
 
 async function startServer(overrides = {}) {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'clipfx-api-test-'));
+  // Set TEST_DATABASE_URL to run the suite against Postgres (each server gets its own schema).
+  const pg = process.env.TEST_DATABASE_URL;
+  const schema = `clipfx_test_${process.pid}_${Math.random().toString(36).slice(2, 8)}`;
   const config = loadConfig({
     dataDir, rateLimits: false, logRequests: false, mediaProcessing: false, cookieSecure: false,
-    storage: 'local', baseUrl: 'http://frontend.test', internalSecret: 'test-secret', ...overrides,
+    storage: 'local', baseUrl: 'http://frontend.test', internalSecret: 'test-secret',
+    databaseUrl: pg || '', databaseSchema: schema, ...overrides,
   });
   const silent = { log() {}, warn() {}, error() {} };
-  const instance = createApp(config, { log: overrides.verbose ? console : silent });
+  const instance = await createApp(config, { log: overrides.verbose ? console : silent });
   const server = await new Promise((resolve) => { const s = instance.app.listen(0, '127.0.0.1', () => resolve(s)); });
   const base = `http://127.0.0.1:${server.address().port}`;
   return {
@@ -21,7 +25,8 @@ async function startServer(overrides = {}) {
     async stop() {
       await new Promise((r) => server.close(r));
       await instance.media.idle();
-      instance.close();
+      if (instance.db.dialect === 'postgres') await instance.db.run(`DROP SCHEMA ${schema} CASCADE`);
+      await instance.close();
       fs.rmSync(dataDir, { recursive: true, force: true });
     },
   };

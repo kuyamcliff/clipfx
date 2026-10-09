@@ -22,7 +22,7 @@ before(async () => {
   const { loadConfig: apiConfig } = require(path.join(backendDir, 'src', 'config'));
   const { createApp } = require(path.join(backendDir, 'src', 'app'));
   dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'clipfx-site-test-'));
-  api = createApp(apiConfig({ dataDir, storage: 'local', rateLimits: false, logRequests: false, mediaProcessing: false, internalSecret: 's3cret' }), { log: quiet });
+  api = await createApp(apiConfig({ dataDir, storage: 'local', rateLimits: false, logRequests: false, mediaProcessing: false, internalSecret: 's3cret' }), { log: quiet });
   api.server = await listen(api.app);
   const backendUrl = `http://127.0.0.1:${api.server.address().port}`;
   site = { server: await listen(createFrontend(loadConfig({ backendUrl, internalSecret: 's3cret', cookieSecure: false, logRequests: false }), { log: quiet })) };
@@ -35,7 +35,7 @@ after(async () => {
   await new Promise((r) => site.server.close(r));
   await new Promise((r) => api.server.close(r));
   await api.media.idle();
-  api.close();
+  await api.close();
   fs.rmSync(dataDir, { recursive: true, force: true });
 });
 
