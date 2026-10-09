@@ -64,6 +64,13 @@ function loadConfig(overrides = {}) {
     sourceUrl: env.SOURCE_URL || 'https://github.com/kuyamcliff/clipfx',
     adminUsernames: (env.ADMIN_USERNAMES || '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean),
     openSignups: bool(env.OPEN_SIGNUPS, true),
+    // "Continue with Google". The redirect URI registered in Google Cloud is BASE_URL + /auth/google/callback.
+    google: {
+      clientId: env.GOOGLE_CLIENT_ID || '',
+      clientSecret: env.GOOGLE_CLIENT_SECRET || '',
+      authUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
+      tokenUrl: env.GOOGLE_TOKEN_URL || 'https://oauth2.googleapis.com/token',
+    },
     cookieSecure: bool(env.COOKIE_SECURE, production),
     trustProxy: trustProxy(env.TRUST_PROXY),
     mediaProcessing: bool(env.MEDIA_PROCESSING, true),

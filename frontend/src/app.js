@@ -359,6 +359,37 @@ function createFrontend(config, { log = console } = {}) {
     return res.view(views.login, { values: { login: req.body.login }, error: r.data.error, next }, r.status);
   });
 
+  // Continue with Google: the API builds the sign-in URL and exchanges the code; this side keeps
+  // the state and PKCE verifier in a short-lived cookie and checks them when Google sends the visitor back.
+  const OAUTH_COOKIE = 'g_oauth';
+  app.get('/auth/google', async (req, res) => {
+    const r = await req.api('GET', '/api/auth/google/start');
+    if (r.status !== 200) {
+      res.flash('error', r.data.error || 'Google sign-in isn’t available right now.');
+      return res.redirect('/login');
+    }
+    const value = Buffer.from(JSON.stringify({ state: r.data.state, verifier: r.data.verifier, next: safeNext(req.query.next) })).toString('base64url');
+    res.cookie(OAUTH_COOKIE, value, { ...cookieBase, maxAge: 10 * 60 * 1000 });
+    res.setHeader('Cache-Control', 'no-store');
+    return res.redirect(r.data.url);
+  });
+
+  app.get('/auth/google/callback', async (req, res) => {
+    let saved = null;
+    try { saved = JSON.parse(Buffer.from(req.cookies[OAUTH_COOKIE] || '', 'base64url').toString()); } catch { saved = null; }
+    res.clearCookie(OAUTH_COOKIE, cookieBase);
+    const back = (message) => { res.flash('error', message); return res.redirect('/login'); };
+    if (req.query.error) return back(req.query.error === 'access_denied' ? 'Google sign-in was cancelled.' : 'Google sign-in didn’t work. Please try again.');
+    if (!saved || !safeEqual(req.query.state, saved.state) || !req.query.code) return back('Google sign-in expired. Please try again.');
+    const r = await req.api('POST', '/api/auth/google', { code: String(req.query.code), verifier: saved.verifier });
+    if (r.status === 200 || r.status === 201) {
+      res.flash('success', r.data.message);
+      return res.redirect(safeNext(saved.next) || (r.data.created ? '/settings' : '/'));
+    }
+    if (r.status >= 500 || r.status === 429) return res.apiError(r);
+    return back(r.data.error || 'Google sign-in didn’t work. Please try again.');
+  });
+
   app.post('/logout', formAction({ api: '/api/auth/logout', body: () => ({}), redirect: '/' }));
 
   const renderReset = async (req, res, { error = null, status = 200 } = {}) => {
@@ -429,7 +460,7 @@ function createFrontend(config, { log = console } = {}) {
     const origin = config.publicUrl || `${req.protocol}://${req.get('host')}`;
     res.type('text/plain').send([
       'User-agent: *', 'Disallow: /admin', 'Disallow: /dashboard', 'Disallow: /settings', 'Disallow: /saved',
-      'Disallow: /upload', 'Disallow: /api/', 'Disallow: /*/download', 'Disallow: /*/report', `Sitemap: ${origin}/sitemap.xml`, '',
+      'Disallow: /upload', 'Disallow: /api/', 'Disallow: /auth/', 'Disallow: /*/download', 'Disallow: /*/report', `Sitemap: ${origin}/sitemap.xml`, '',
     ].join('\n'));
   });
 

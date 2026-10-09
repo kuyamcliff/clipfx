@@ -20,6 +20,7 @@ module.exports = function metaRoutes(app, ctx) {
       storageOrigins: storage.origins,
       mediaProcessing: media.available,
       uploadsEnabled: config.uploadsEnabled,
+      googleAuth: !!(config.google.clientId && config.google.clientSecret),
     },
     catalog: {
       categories: catalog.CATEGORIES,
@@ -40,7 +41,7 @@ module.exports = function metaRoutes(app, ctx) {
 
   ctx.publicUser = (u, { self = false } = {}) => u && ({
     id: u.id, username: u.username, display_name: u.display_name, bio: u.bio, website: u.website,
-    role: u.role, banned: !!u.banned, created_at: u.created_at, ...(self ? { email: u.email || '' } : {}),
+    role: u.role, banned: !!u.banned, created_at: u.created_at, ...(self ? { email: u.email || '', has_password: !!u.password_hash } : {}),
   });
 
   app.get('/api/session', async (req, res) => {

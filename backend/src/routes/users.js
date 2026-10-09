@@ -74,7 +74,8 @@ module.exports = function userRoutes(app, ctx) {
   app.post('/api/me/password', requireUser, rate('password', 10, 3600 * 1000), async (req, res) => {
     const b = req.body;
     const errors = {};
-    if (!(await verifyPassword(String(b.current || ''), req.user.password_hash))) errors.current = 'That’s not your current password.';
+    // Accounts made with Google have no password yet; they can set one without a current password.
+    if (req.user.password_hash && !(await verifyPassword(String(b.current || ''), req.user.password_hash))) errors.current = 'That’s not your current password.';
     const pwError = ctx.validatePassword(String(b.password || ''));
     if (pwError) errors.password = pwError;
     if (Object.keys(errors).length) return res.fail(400, 'Check the highlighted fields.', errors);
@@ -86,9 +87,11 @@ module.exports = function userRoutes(app, ctx) {
 
   app.post('/api/me/delete', requireUser, rate('delete-account', 5, 3600 * 1000), async (req, res) => {
     const b = req.body;
+    const hasPassword = !!req.user.password_hash;
     const ok = String(b.confirm || '').trim().toLowerCase() === req.user.username
-      && await verifyPassword(String(b.password || ''), req.user.password_hash);
-    if (!ok) return res.fail(400, 'Type your username and current password to confirm.', { delete: 'Type your username and current password to confirm.' });
+      && (!hasPassword || await verifyPassword(String(b.password || ''), req.user.password_hash));
+    const msg = hasPassword ? 'Type your username and current password to confirm.' : 'Type your username to confirm.';
+    if (!ok) return res.fail(400, msg, { delete: msg });
     const keys = await models.assets.keysForUser(req.user.id);
     const pending = await models.uploads.forUser(req.user.id);
     await models.users.remove(req.user.id);

@@ -1,5 +1,5 @@
 'use strict';
-const { html, formatBytes } = require('../src/html');
+const { html, raw, formatBytes } = require('../src/html');
 const { layout } = require('./layout');
 const { icon, mark, csrfField, fieldError, invalid, notice } = require('./components');
 
@@ -28,10 +28,20 @@ const perks = (ctx) => html`
     <li>${icon('bookmark')}<span><strong>Save assets</strong> to come back to later.</span></li>
   </ul>`;
 
+// Google's "G" mark, as their sign-in branding guidelines ask for.
+const GOOGLE_G = '<svg class="g-mark" viewBox="0 0 48 48" aria-hidden="true" focusable="false"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>';
+
+function googleButton(ctx, next) {
+  if (!ctx.config.googleAuth) return '';
+  return html`<a class="btn btn-lg btn-block btn-google" href="/auth/google${next ? `?next=${encodeURIComponent(next)}` : ''}">${raw(GOOGLE_G)}<span>Continue with Google</span></a>
+    <p class="divider"><span>or</span></p>`;
+}
+
 function signup(ctx, { values, errors, next }) {
   return authShell(ctx, 'Create an account', html`
     <h1>Create an account</h1>
     <p class="sub">You need one to upload or save. Downloading doesn't.</p>
+    ${googleButton(ctx, next)}
     <form method="post" action="/signup" class="stack" novalidate>
       ${csrfField(ctx)}
       <input type="hidden" name="next" value="${next}">
@@ -67,6 +77,7 @@ function login(ctx, { values, error, next }) {
     <h1>Log in</h1>
     <p class="sub">Welcome back.</p>
     ${error ? notice('danger', error) : ''}
+    ${googleButton(ctx, next)}
     <form method="post" action="/login" class="stack">
       ${csrfField(ctx)}
       <input type="hidden" name="next" value="${next}">
@@ -133,17 +144,17 @@ function settings(ctx, { values, errors }) {
     <form method="post" action="/settings/password" class="panel stack" id="password">
       ${csrfField(ctx)}
       <h2 class="panel-h">Password</h2>
-      <div class="field">
+      ${u.has_password ? html`<div class="field">
         <label for="current">Current password</label>
         <input id="current" name="current" type="password" required autocomplete="current-password"${invalid(errors, 'current')}>
         ${fieldError(errors, 'current')}
-      </div>
+      </div>` : html`<p class="hint">You sign in with Google. Set a password if you also want to log in with your username.</p>`}
       <div class="field">
         <label for="new-password">New password</label>
         ${passwordInput('new-password', 'password', 'new-password', errors)}
         ${fieldError(errors, 'password')}
       </div>
-      <div><button class="btn" type="submit">Change password</button></div>
+      <div><button class="btn" type="submit">${u.has_password ? 'Change password' : 'Set password'}</button></div>
     </form>
 
     <form method="post" action="/settings/delete" class="panel panel-danger stack" id="delete" data-confirm="This permanently deletes your account and every asset you uploaded. Continue?">
@@ -152,7 +163,7 @@ function settings(ctx, { values, errors }) {
       <p class="hint">Deletes your account and every upload. Share links stop working. This can't be undone.</p>
       ${errors.delete ? notice('danger', errors.delete) : ''}
       <div class="field"><label for="confirm">Type your username, <strong>${u.username}</strong></label><input id="confirm" name="confirm" autocomplete="off" autocapitalize="off" spellcheck="false" required></div>
-      <div class="field"><label for="delete-password">Password</label><input id="delete-password" name="password" type="password" autocomplete="current-password" required></div>
+      ${u.has_password ? html`<div class="field"><label for="delete-password">Password</label><input id="delete-password" name="password" type="password" autocomplete="current-password" required></div>` : ''}
       <div><button class="btn btn-danger" type="submit">Delete my account</button></div>
     </form>
   </div>`;
