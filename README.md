@@ -10,13 +10,13 @@ Upload footage, transitions, overlays, LUTs, project templates, MOGRTs, sound ef
                  pages, forms, /api/*                     JSON
  Browser ───────────────────────────────▶  frontend/  ─────────────▶  backend/
    │                                      (Vercel)                   (Render)
-   │                                                                  │  SQLite on a disk
+   │                                                                  │  Postgres (Supabase)
    │   upload & download with signed URLs                             │  signs R2 URLs
    └──────────────────────────────────────▶  Cloudflare R2  ◀─────────┘  (thumbnails, hashing)
 ```
 
 - **frontend/** runs on **Vercel**. It renders every page on the server, so share links unfurl with a thumbnail in Discord, X and iMessage. It handles HTML forms and forwards the browser's `/api/*` calls to the backend, so login cookies stay first-party on your domain.
-- **backend/** runs on **Render**. It's a JSON API for accounts, assets, permissions and moderation, with a SQLite database on a persistent disk.
+- **backend/** runs on **Render**. It's a JSON API for accounts, assets, permissions and moderation. Its database is **Postgres** (e.g. Supabase) via `DATABASE_URL`; without it, SQLite is used for local development.
 - **Cloudflare R2** stores every file. **Uploads and downloads go straight between the browser and R2.** File bytes never pass through Render or Vercel:
   1. The browser tells the API what it wants to upload (name, size). The API checks type, size and quota and answers with signed R2 URLs. Files over 64 MB get one URL per part.
   2. The browser uploads directly to R2: four parts at a time, each retried on failure, with live progress.
@@ -45,6 +45,7 @@ npm run setup      # installs backend/ and frontend/
 npm run seed       # optional demo content (login: demo / demo-password)
 npm run dev        # website http://localhost:3000, API http://localhost:4000
 npm test           # backend + frontend tests
+TEST_DATABASE_URL=postgres://… npm --prefix backend test   # run the API tests against Postgres
 ```
 
 Without R2 settings, the API stores files in `backend/data/uploads`. It uses the same signed-URL flow, so you're testing the real upload path. The first account you create becomes the admin.
@@ -74,15 +75,21 @@ You'll set up three things: an R2 bucket, the API on Render and the website on V
 4. Recommended: add a lifecycle rule to **abort incomplete multipart uploads after 1 day**. The API also cleans up abandoned uploads hourly.
 5. Optional: connect custom domains to the bucket (e.g. `image.`, `video.`, `audio.` and `download.` subdomains) and set `R2_PUBLIC_IMAGE_URL`, `R2_PUBLIC_VIDEO_URL`, `R2_PUBLIC_AUDIO_URL` and `R2_PUBLIC_DOWNLOAD_URL` on the API. Previews and downloads are then served from those domains through Cloudflare's cache. Uploads still use signed URLs on the S3 API. A custom domain makes objects readable by anyone who has the URL, so file keys are random, the download filename is stored on each object, and assets removed by moderators are moved to new keys so shared links stop working. Cloudflare may serve a cached copy until it expires; purge the cache for urgent takedowns.
 
-### 2. Render (API)
+### 2. Database (Supabase or any Postgres)
 
-1. **New → Blueprint**, pick this repo. Render reads `render.yaml` and creates `clipfx-api` (Docker, with ffmpeg) plus a 1 GB disk at `/data` for the database.
-2. Fill in the prompted values: `BASE_URL` (your Vercel URL; you can update it after step 3), `INTERNAL_SECRET`, `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`, and optionally `DONATE_URL` and `CONTACT_EMAIL`.
-3. After it deploys, open `https://<your-service>.onrender.com/healthz`. It should say `"storage":"r2"`.
+1. Create a Supabase project (or any Postgres 14+).
+2. **Project Settings → Database → Connection string**, choose **Session pooler** (port 5432) and copy the URI with your password filled in. Use the session pooler, not the transaction pooler (6543).
+3. That's `DATABASE_URL`. On first start the API creates its tables in a `clipfx` schema. Supabase doesn't expose that schema through its REST API, and row-level security is on, so only the API's own database user can read it.
 
-A persistent disk needs a paid instance: the blueprint uses *Starter*. Free instances have no disk (the database would be wiped on every deploy) and sleep when idle.
+### 3. Render (API)
 
-### 3. Vercel (website)
+1. **New → Blueprint**, pick this repo. Render reads `render.yaml` and creates `clipfx-api` (Docker, with ffmpeg). No disk is needed: the database is Postgres and files are in R2.
+2. Fill in the prompted values: `DATABASE_URL`, `BASE_URL` (your Vercel URL; you can update it after step 4), `INTERNAL_SECRET`, `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`, and optionally `DONATE_URL` and `CONTACT_EMAIL`.
+3. After it deploys, open `https://<your-service>.onrender.com/healthz`. It should say `"storage":"r2","database":"postgres"`.
+
+Free Render instances sleep after 15 minutes without traffic, so the first request after that takes up to a minute. The *Starter* plan stays awake.
+
+### 4. Vercel (website)
 
 1. **Add New → Project**, import this repo, and set **Root Directory** to `frontend`. Framework preset: *Other*. Leave the build settings empty; `frontend/vercel.json` handles them.
 2. Environment variables: `BACKEND_URL` = your Render URL (no trailing slash) and `INTERNAL_SECRET` = the same value as on Render. Add `PUBLIC_URL` if you use a custom domain.
@@ -92,7 +99,7 @@ Keep Vercel's function region close to Render's (the blueprint uses Render's *Vi
 
 ### Backups
 
-Everything except the files lives in one SQLite database on the Render disk (`/data/clipfx.db`). Render takes daily disk snapshots on paid plans; for extra safety, copy the file somewhere else periodically. Files in R2 are kept until an asset is deleted.
+Accounts, listings and reports live in Postgres. Supabase takes daily backups on paid plans; on the free plan, export with `pg_dump` now and then. Files in R2 are kept until an asset is deleted.
 
 ## Configuration
 
@@ -114,7 +121,8 @@ backend/                     Render service (Docker)
   src/routes/                meta, auth, uploads, assets, users, admin, blob (local storage only)
   src/storage/               r2.js (production) and local.js (development), one interface
   src/media.js               hashing + ffmpeg jobs
-  src/models.js, db.js       SQLite schema and queries
+  src/models.js              queries (shared by both databases)
+  src/db/                    postgres.js (production) and sqlite.js (development), one interface
   scripts/                   seed.js, r2-cors.js
   test/                      API tests (+ r2.test.js, opt-in against a real bucket)
   Dockerfile

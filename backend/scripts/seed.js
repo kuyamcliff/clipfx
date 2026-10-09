@@ -26,15 +26,15 @@ const DEMO = [
 
 async function main() {
   const config = loadConfig();
-  const { models, storage, media, close } = createApp(config, { log: { log() {}, warn: console.warn, error: console.error } });
+  const { models, storage, media, close } = await createApp(config, { log: { log() {}, warn: console.warn, error: console.error } });
   const ffmpeg = media.available;
   const tmp = fs.mkdtempSync(path.join(config.tmpDir, 'seed-'));
 
-  let user = models.users.byUsername('demo');
+  let user = await models.users.byUsername('demo');
   if (!user) {
-    const id = models.users.create({ username: 'demo', passwordHash: await hashPassword('demo-password'), displayName: 'Demo Studio', role: models.users.count() ? 'user' : 'admin' });
-    models.users.updateProfile(id, { displayName: 'Demo Studio', bio: 'Example uploads so you can see how the site looks.', website: 'https://example.org/', email: '' });
-    user = models.users.byId(id);
+    const id = await models.users.create({ username: 'demo', passwordHash: await hashPassword('demo-password'), displayName: 'Demo Studio', role: await models.users.count() ? 'user' : 'admin' });
+    await models.users.updateProfile(id, { displayName: 'Demo Studio', bio: 'Example uploads so you can see how the site looks.', website: 'https://example.org/', email: '' });
+    user = await models.users.byId(id);
   }
 
   for (const d of DEMO) {
@@ -61,19 +61,19 @@ async function main() {
     const fileKey = storage.newKey('f', ext);
     const kind = FILE_TYPES[ext].kind;
     await storage.putFile(file, fileKey, FILE_TYPES[ext].inline ? FILE_TYPES[ext].mime : 'application/octet-stream');
-    const { id } = models.assets.create({
+    const { id } = await models.assets.create({
       userId: user.id, title: d.title, description: `${d.title} — demo content generated for local development.\n\nReplace it with real uploads!`,
       category: d.category, software: d.software, tags: d.tags.split(', '), license: d.license, visibility: 'public',
       fileName: `${d.title.replace(/\W+/g, '-').toLowerCase()}.${ext}`, fileKey, fileSize: size, fileExt: ext, fileKind: kind,
       mediaStatus: media.needsMedia(kind) ? 'pending' : 'none',
     });
-    models.db.prepare('UPDATE assets SET downloads = ?, views = ? WHERE id = ?').run(Math.floor(Math.random() * 900), Math.floor(Math.random() * 4000), id);
+    await models.assets.setCounts(Math.floor(Math.random() * 900), Math.floor(Math.random() * 4000), id);
     media.enqueue(id);
     console.log(`+ ${d.title}`);
   }
   await media.idle();
   fs.rmSync(tmp, { recursive: true, force: true });
-  close();
+  await close();
   console.log('\nDone. Log in as demo / demo-password');
 }
 

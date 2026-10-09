@@ -67,7 +67,7 @@ function createMedia({ config, models, storage, log = console }) {
   const scale = "scale='min(960,iw)':-2";
 
   async function processAsset(id) {
-    const asset = models.assets.rawById(id);
+    const asset = await models.assets.rawById(id);
     if (!asset) return;
     const update = {};
     const created = [];
@@ -121,17 +121,17 @@ function createMedia({ config, models, storage, log = console }) {
     }
 
     // The asset may have been deleted, or its file replaced, while we worked.
-    const now = models.assets.rawById(id);
+    const now = await models.assets.rawById(id);
     if (!now || now.file_key !== asset.file_key) {
       await Promise.all(created.map((k) => storage.remove(k)));
       return;
     }
     if (asset.media_status === 'pending') update.media_status = 'done';
-    models.assets.setFields(id, update);
+    await models.assets.setFields(id, update);
 
-    if (update.file_sha256 && models.assets.isBlockedHash(update.file_sha256)) {
-      models.assets.setStatus(id, 'removed', 'Same file as one removed earlier');
-      await quarantine(models, storage, models.assets.rawById(id), log);
+    if (update.file_sha256 && await models.assets.isBlockedHash(update.file_sha256)) {
+      await models.assets.setStatus(id, 'removed', 'Same file as one removed earlier');
+      await quarantine(models, storage, await models.assets.rawById(id), log);
       log.warn(`[media] asset ${id} matches a blocked file and was removed`);
     }
   }
@@ -146,7 +146,7 @@ function createMedia({ config, models, storage, log = console }) {
         await processAsset(id);
       } catch (err) {
         log.warn(`[media] asset ${id} failed: ${err.message}`);
-        try { models.assets.setFields(id, { media_status: 'failed' }); } catch { /* deleted */ }
+        try { await models.assets.setFields(id, { media_status: 'failed' }); } catch { /* deleted */ }
       }
     }
     running = false;
@@ -166,8 +166,8 @@ function createMedia({ config, models, storage, log = console }) {
   }
 
   // Re-queue anything left unfinished by a restart.
-  function resume() {
-    models.assets.needingWork().forEach((r) => enqueue(r.id));
+  async function resume() {
+    (await models.assets.needingWork()).forEach((r) => enqueue(r.id));
   }
 
   const idle = () => (running || queue.length ? new Promise((r) => waiters.push(r)) : Promise.resolve());

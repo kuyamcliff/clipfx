@@ -20,12 +20,12 @@ module.exports = function userRoutes(app, ctx) {
   const { models, config, storage, requireUser, rate, cookieBase } = ctx;
 
   app.get('/api/users/:username', async (req, res) => {
-    const profile = models.users.byUsername(req.params.username);
+    const profile = await models.users.byUsername(req.params.username);
     if (!profile || (profile.banned && !ctx.isAdmin(req))) return res.fail(404, 'There’s no creator with that username.');
     const sort = ctx.SORTS[req.query.sort] ? req.query.sort : 'new';
     res.ok({
       profile: ctx.publicUser(profile),
-      stats: models.users.stats(profile.id),
+      stats: await models.users.stats(profile.id),
       result: await models.assets.list({ userId: profile.id, page: pageOf(req.query), sort, perPage: 24, includeBanned: true }),
       sort,
       sorts: ctx.SORTS,
@@ -42,14 +42,14 @@ module.exports = function userRoutes(app, ctx) {
       a.shareUrl = ctx.absolute(req, `/a/${a.slug}`);
       if (a.status !== 'active') ctx.hideMedia(a);
     });
-    res.ok({ result, stats: models.users.stats(req.user.id), used: models.users.storageUsed(req.user.id), quota: config.userQuota });
+    res.ok({ result, stats: await models.users.stats(req.user.id), used: await models.users.storageUsed(req.user.id), quota: config.userQuota });
   });
 
-  app.get('/api/me/storage', requireUser, (req, res) => {
-    res.ok({ used: models.users.storageUsed(req.user.id), quota: config.userQuota });
+  app.get('/api/me/storage', requireUser, async (req, res) => {
+    res.ok({ used: await models.users.storageUsed(req.user.id), quota: config.userQuota });
   });
 
-  app.post('/api/me/profile', requireUser, (req, res) => {
+  app.post('/api/me/profile', requireUser, async (req, res) => {
     const b = req.body;
     const values = {
       display_name: String(b.display_name || '').replace(/\s+/g, ' ').trim().slice(0, 50),
@@ -62,13 +62,13 @@ module.exports = function userRoutes(app, ctx) {
     const site = normalizeWebsite(values.website);
     if (site.error) errors.website = site.error; else values.website = site.value;
     if (values.email) {
-      const other = models.users.byLogin(values.email);
+      const other = await models.users.byLogin(values.email);
       if (!ctx.EMAIL_RE.test(values.email) || values.email.length > 200) errors.email = 'That email doesn’t look right.';
       else if (other && other.id !== req.user.id) errors.email = 'Another account uses that email.';
     }
     if (Object.keys(errors).length) return res.fail(400, 'Check the highlighted fields.', errors);
-    models.users.updateProfile(req.user.id, { displayName: values.display_name, bio: values.bio, website: values.website, email: values.email });
-    return res.ok({ message: 'Profile updated.', user: ctx.publicUser(models.users.byId(req.user.id), { self: true }) });
+    await models.users.updateProfile(req.user.id, { displayName: values.display_name, bio: values.bio, website: values.website, email: values.email });
+    return res.ok({ message: 'Profile updated.', user: ctx.publicUser(await models.users.byId(req.user.id), { self: true }) });
   });
 
   app.post('/api/me/password', requireUser, rate('password', 10, 3600 * 1000), async (req, res) => {
@@ -78,9 +78,9 @@ module.exports = function userRoutes(app, ctx) {
     const pwError = ctx.validatePassword(String(b.password || ''));
     if (pwError) errors.password = pwError;
     if (Object.keys(errors).length) return res.fail(400, 'Check the highlighted fields.', errors);
-    models.users.setPassword(req.user.id, await hashPassword(String(b.password)));
-    models.sessions.destroyAllFor(req.user.id);
-    ctx.login(res, req.user.id);
+    await models.users.setPassword(req.user.id, await hashPassword(String(b.password)));
+    await models.sessions.destroyAllFor(req.user.id);
+    await ctx.login(res, req.user.id);
     return res.ok({ message: 'Password changed. Other devices were signed out.' });
   });
 
@@ -89,9 +89,9 @@ module.exports = function userRoutes(app, ctx) {
     const ok = String(b.confirm || '').trim().toLowerCase() === req.user.username
       && await verifyPassword(String(b.password || ''), req.user.password_hash);
     if (!ok) return res.fail(400, 'Type your username and current password to confirm.', { delete: 'Type your username and current password to confirm.' });
-    const keys = models.assets.keysForUser(req.user.id);
-    const pending = models.db.prepare('SELECT key, multipart_id FROM uploads WHERE user_id = ?').all(req.user.id);
-    models.users.remove(req.user.id);
+    const keys = await models.assets.keysForUser(req.user.id);
+    const pending = await models.uploads.forUser(req.user.id);
+    await models.users.remove(req.user.id);
     for (const k of keys.flatMap((r) => [r.file_key, r.preview_key, r.thumb_key])) await storage.remove(k);
     for (const u of pending) {
       if (u.multipart_id) await storage.abortMultipart(u.key, u.multipart_id);

@@ -3,7 +3,7 @@
 // File bytes never pass through this server: browsers upload to and download from storage directly.
 const fs = require('node:fs');
 const express = require('express');
-const { openDb } = require('./db');
+const { openDatabase } = require('./db');
 const { createModels } = require('./models');
 const { createStorage } = require('./storage');
 const { createMedia } = require('./media');
@@ -11,15 +11,15 @@ const { parseCookies, safeEqual, createLimiter, createSeenCache } = require('./s
 
 const UPLOAD_TTL = 24 * 3600 * 1000;
 
-function createApp(config, { log = console } = {}) {
+async function createApp(config, { log = console } = {}) {
   fs.mkdirSync(config.dataDir, { recursive: true });
   fs.mkdirSync(config.tmpDir, { recursive: true });
 
-  const db = openDb(config.dbFile);
+  const db = await openDatabase(config);
   const storage = createStorage(config);
   const models = createModels(db, { storage });
   const media = createMedia({ config, models, storage, log });
-  media.resume();
+  media.resume().catch((err) => log.warn(`[media] resume failed: ${err.message}`));
 
   const limiter = createLimiter();
   const app = express();
@@ -36,7 +36,7 @@ function createApp(config, { log = console } = {}) {
     // Share links point at the frontend.
     absolute: (req, p) => `${config.baseUrl || `${req.protocol}://${req.get('x-forwarded-host') || req.get('host')}`}${p}`,
     rate(name, max, windowMs) {
-      return (req, res, next) => {
+      return async (req, res, next) => {
         if (!config.rateLimits) return next();
         const r = limiter(`${name}:${req.clientIp}`, max, windowMs);
         if (r.ok) return next();
@@ -52,13 +52,13 @@ function createApp(config, { log = console } = {}) {
       if (req.user && req.user.role === 'admin') return next();
       return res.fail(404, 'Not found.');
     },
-    login(res, userId) {
-      res.cookie('sid', models.sessions.create(userId), { ...cookieBase, maxAge: 30 * 24 * 3600 * 1000 });
+    async login(res, userId) {
+      res.cookie('sid', await models.sessions.create(userId), { ...cookieBase, maxAge: 30 * 24 * 3600 * 1000 });
     },
     isAdmin: (req) => !!(req.user && req.user.role === 'admin'),
   };
 
-  app.use((req, res, next) => {
+  app.use(async (req, res, next) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Referrer-Policy', 'no-referrer');
     res.setHeader('X-Frame-Options', 'DENY');
@@ -67,25 +67,25 @@ function createApp(config, { log = console } = {}) {
   });
 
   if (config.logRequests) {
-    app.use((req, res, next) => {
+    app.use(async (req, res, next) => {
       const start = Date.now();
       res.on('finish', () => log.log(`${req.method} ${req.originalUrl.split('?')[0]} ${res.statusCode} ${Date.now() - start}ms`));
       next();
     });
   }
 
-  app.get('/healthz', (req, res) => {
-    db.prepare('SELECT 1').get();
-    res.json({ ok: true, storage: storage.kind, media: media.available });
+  app.get('/healthz', async (req, res) => {
+    await db.get('SELECT 1 AS ok');
+    res.json({ ok: true, storage: storage.kind, database: db.dialect, media: media.available });
   });
 
   // Request context: client IP, cookies, session and response helpers.
-  app.use((req, res, next) => {
+  app.use(async (req, res, next) => {
     // The frontend forwards the visitor's IP; only believe it when it proves it's our frontend.
     const trusted = config.internalSecret && safeEqual(req.get('x-internal-secret'), config.internalSecret);
     req.clientIp = (trusted && req.get('x-client-ip')) || req.ip;
     req.cookies = parseCookies(req.headers.cookie);
-    const user = models.sessions.user(req.cookies.sid);
+    const user = await models.sessions.user(req.cookies.sid);
     req.user = user && !user.banned ? user : null;
     if (req.cookies.sid && !req.user) res.clearCookie('sid', cookieBase);
     res.ok = (data = {}, status = 200) => res.status(status).json({ ok: true, ...data });
@@ -101,7 +101,7 @@ function createApp(config, { log = console } = {}) {
 
   // CSRF: browsers can only reach us through the frontend, which sends the double-submit token.
   // Writes must also come from an allowed origin, and must be JSON (HTML forms can't send that cross-site).
-  app.use((req, res, next) => {
+  app.use(async (req, res, next) => {
     if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return next();
     const origin = req.get('origin');
     if (origin && origin !== 'null') {
@@ -124,7 +124,7 @@ function createApp(config, { log = console } = {}) {
   require('./routes/users')(app, ctx);
   require('./routes/admin')(app, ctx);
 
-  app.use((req, res) => res.fail(404, 'Not found.'));
+  app.use(async (req, res) => res.fail(404, 'Not found.'));
 
   // eslint-disable-next-line no-unused-vars
   app.use((err, req, res, next) => {
@@ -138,12 +138,12 @@ function createApp(config, { log = console } = {}) {
 
   // Housekeeping: expired sessions, and uploads that were never attached to an asset.
   async function sweep() {
-    models.sessions.purgeExpired();
-    for (const u of models.uploads.stale(Date.now() - UPLOAD_TTL)) {
+    await models.sessions.purgeExpired();
+    for (const u of await models.uploads.stale(Date.now() - UPLOAD_TTL)) {
       try {
         if (u.multipart_id) await storage.abortMultipart(u.key, u.multipart_id);
         await storage.remove(u.key);
-        models.uploads.remove(u.id);
+        await models.uploads.remove(u.id);
       } catch (err) {
         log.warn(`[sweep] couldn't clean upload ${u.id}: ${err.message}`);
       }
@@ -154,7 +154,7 @@ function createApp(config, { log = console } = {}) {
 
   return {
     app, db, models, storage, media, sweep,
-    close() { clearInterval(timer); db.close(); },
+    async close() { clearInterval(timer); await db.close(); },
   };
 }
 

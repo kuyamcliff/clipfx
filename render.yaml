@@ -6,8 +6,9 @@ services:
     runtime: docker
     dockerfilePath: ./backend/Dockerfile
     dockerContext: ./backend
-    # A persistent disk needs a paid instance. The SQLite database lives on it; files live in R2.
-    plan: starter
+    # The database is Postgres (DATABASE_URL, e.g. Supabase) and files live in R2, so no disk is needed.
+    # Free instances work but sleep when idle; "starter" stays awake.
+    plan: free
     # Keep this close to your Vercel functions' region (Vercel's default is iad1, Washington D.C.).
     region: virginia
     healthCheckPath: /healthz
@@ -15,10 +16,6 @@ services:
     buildFilter:
       paths:
         - backend/**
-    disk:
-      name: clipfx-data
-      mountPath: /data
-      sizeGB: 1
     envVars:
       - key: NODE_ENV
         value: production
@@ -28,6 +25,9 @@ services:
         value: "1"
       - key: STORAGE
         value: r2
+      # Supabase → Database → Connection string → Session pooler (port 5432).
+      - key: DATABASE_URL
+        sync: false
       # Your Vercel site, e.g. https://clipfx.vercel.app (used for share links and the origin check).
       - key: BASE_URL
         sync: false

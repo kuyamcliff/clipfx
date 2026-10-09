@@ -18,7 +18,7 @@ async function relocate(models, storage, row, prefixFor, log) {
       log.warn(`[quarantine] couldn't move ${field} of asset ${row.id}: ${err.message}`);
     }
   }
-  if (Object.keys(set).length) models.assets.setFields(row.id, set);
+  if (Object.keys(set).length) await models.assets.setFields(row.id, set);
 }
 
 const quarantine = (models, storage, row, log = console) => relocate(models, storage, row, () => 'x', log);
