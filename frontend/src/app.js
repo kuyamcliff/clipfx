@@ -123,7 +123,8 @@ function createFrontend(config, { log = console } = {}) {
 
     res.view = async (view, data = {}, status = 200) => {
       const ctx = await req.context();
-      const storage = ctx.config.storageOrigin ? ` ${ctx.config.storageOrigin}` : '';
+      const origins = (ctx.config.storageOrigins || [ctx.config.storageOrigin]).filter(Boolean);
+      const storage = origins.length ? ` ${origins.join(' ')}` : '';
       res.setHeader('Content-Security-Policy', [
         "default-src 'self'", `img-src 'self' data: blob:${storage}`, `media-src 'self' blob:${storage}`, "script-src 'self'",
         "style-src 'self' 'unsafe-inline'", `connect-src 'self'${storage}`, "object-src 'none'", "base-uri 'self'",

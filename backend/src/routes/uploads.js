@@ -10,6 +10,7 @@ const crypto = require('node:crypto');
 const { FILE_TYPES, PREVIEW_EXTS, THUMB_EXTS, extOf } = require('../catalog');
 const { MEDIA_MIME } = require('../models');
 const { formatBytes } = require('../format');
+const { contentDisposition: contentDispositionFor } = require('../storage');
 
 const MAX_PARTS = 10000;
 
@@ -72,10 +73,12 @@ module.exports = function uploadRoutes(app, ctx) {
       const id = crypto.randomBytes(12).toString('base64url');
       const key = storage.newKey(s.rule.prefix, s.ext);
       const contentType = contentTypeFor(s.field, s.ext);
+      // Stored on the object so downloads from a public domain keep the original filename.
+      const contentDisposition = s.field === 'file' ? contentDispositionFor('attachment', s.name) : undefined;
       if (s.size > config.multipartThreshold) {
         const partSize = Math.max(config.minPartSize, Math.ceil(s.size / MAX_PARTS));
         const count = Math.ceil(s.size / partSize);
-        const multipartId = await storage.createMultipart(key, contentType);
+        const multipartId = await storage.createMultipart(key, contentType, contentDisposition);
         const parts = [];
         for (let n = 1; n <= count; n++) {
           const len = n < count ? partSize : s.size - partSize * (count - 1);
@@ -84,7 +87,7 @@ module.exports = function uploadRoutes(app, ctx) {
         models.uploads.create({ id, userId: req.user.id, key, field: s.field, fileName: s.name, ext: s.ext, size: s.size, contentType, multipartId, partSize });
         tickets.push({ id, field: s.field, method: 'multipart', partSize, parts });
       } else {
-        const { url, headers } = await storage.presignPut(key, { contentType, contentLength: s.size });
+        const { url, headers } = await storage.presignPut(key, { contentType, contentLength: s.size, contentDisposition });
         models.uploads.create({ id, userId: req.user.id, key, field: s.field, fileName: s.name, ext: s.ext, size: s.size, contentType });
         tickets.push({ id, field: s.field, method: 'put', url, headers });
       }

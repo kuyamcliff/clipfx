@@ -79,6 +79,14 @@ function loadConfig(overrides = {}) {
       secretAccessKey: env.R2_SECRET_ACCESS_KEY || '',
       bucket: env.R2_BUCKET || '',
       region: env.R2_REGION || 'auto',
+      // Optional public custom domains on the bucket. When set, previews and downloads use them
+      // (cached by Cloudflare) instead of signed URLs. Uploads always use signed S3 API URLs.
+      public: {
+        image: (env.R2_PUBLIC_IMAGE_URL || '').replace(/\/+$/, ''),
+        video: (env.R2_PUBLIC_VIDEO_URL || '').replace(/\/+$/, ''),
+        audio: (env.R2_PUBLIC_AUDIO_URL || '').replace(/\/+$/, ''),
+        download: (env.R2_PUBLIC_DOWNLOAD_URL || '').replace(/\/+$/, ''),
+      },
     },
     ...overrides,
   };

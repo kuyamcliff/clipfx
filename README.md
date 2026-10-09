@@ -68,10 +68,11 @@ You'll set up three things: an R2 bucket, the API on Render and the website on V
    or paste this into the bucket's **Settings → CORS policy**:
    ```json
    [{ "AllowedOrigins": ["https://your-site.vercel.app"], "AllowedMethods": ["GET", "HEAD", "PUT"],
-      "AllowedHeaders": ["content-type"], "ExposeHeaders": ["ETag"], "MaxAgeSeconds": 3600 }]
+      "AllowedHeaders": ["content-type", "content-disposition"], "ExposeHeaders": ["ETag"], "MaxAgeSeconds": 3600 }]
    ```
-   `ExposeHeaders: ETag` is required for big files (multipart uploads).
+   `ExposeHeaders: ETag` is required for big files (multipart uploads), and `content-disposition` must be an allowed header because the download filename is set during upload.
 4. Recommended: add a lifecycle rule to **abort incomplete multipart uploads after 1 day**. The API also cleans up abandoned uploads hourly.
+5. Optional: connect custom domains to the bucket (e.g. `image.`, `video.`, `audio.` and `download.` subdomains) and set `R2_PUBLIC_IMAGE_URL`, `R2_PUBLIC_VIDEO_URL`, `R2_PUBLIC_AUDIO_URL` and `R2_PUBLIC_DOWNLOAD_URL` on the API. Previews and downloads are then served from those domains through Cloudflare's cache. Uploads still use signed URLs on the S3 API. A custom domain makes objects readable by anyone who has the URL, so file keys are random, the download filename is stored on each object, and assets removed by moderators are moved to new keys so shared links stop working. Cloudflare may serve a cached copy until it expires; purge the cache for urgent takedowns.
 
 ### 2. Render (API)
 

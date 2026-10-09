@@ -17,6 +17,7 @@ module.exports = function metaRoutes(app, ctx) {
       maxThumb: config.maxThumb,
       userQuota: config.userQuota,
       storageOrigin: storage.origin,
+      storageOrigins: storage.origins,
       mediaProcessing: media.available,
       uploadsEnabled: config.uploadsEnabled,
     },
