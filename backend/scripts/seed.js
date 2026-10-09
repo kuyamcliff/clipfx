@@ -62,7 +62,7 @@ async function main() {
     const kind = FILE_TYPES[ext].kind;
     await storage.putFile(file, fileKey, FILE_TYPES[ext].inline ? FILE_TYPES[ext].mime : 'application/octet-stream');
     const { id } = await models.assets.create({
-      userId: user.id, title: d.title, description: `${d.title} — demo content generated for local development.\n\nReplace it with real uploads!`,
+      userId: user.id, title: d.title, description: `${d.title}: demo content generated for local development.\n\nReplace it with real uploads!`,
       category: d.category, software: d.software, tags: d.tags.split(', '), license: d.license, visibility: 'public',
       fileName: `${d.title.replace(/\W+/g, '-').toLowerCase()}.${ext}`, fileKey, fileSize: size, fileExt: ext, fileKind: kind,
       mediaStatus: media.needsMedia(kind) ? 'pending' : 'none',

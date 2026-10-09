@@ -1,9 +1,11 @@
-/* ClipFX front-end: progressive enhancements only — every page works without JS. */
+/* ClipFX in the browser. Every page works without this file; it adds menus, copy buttons,
+   hover previews, saving without a reload, and the direct-to-storage uploader. */
 (function () {
   'use strict';
 
   const $ = (sel, root = document) => root.querySelector(sel);
   const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
+  const mobile = window.matchMedia('(max-width: 879px)');
 
   function formatBytes(bytes) {
     const units = ['B', 'KB', 'MB', 'GB', 'TB'];
@@ -21,40 +23,67 @@
     return h ? `${h}:${String(m).padStart(2, '0')}:${sec}` : `${m}:${sec}`;
   }
 
-  // ---- Navigation, flash, confirm -------------------------------------------------
-  const navToggle = $('[data-nav-toggle]');
-  if (navToggle) {
-    navToggle.addEventListener('click', () => {
-      const nav = $('#site-nav');
-      const open = nav.classList.toggle('open');
-      navToggle.setAttribute('aria-expanded', String(open));
+  // ---- Menus, header search, flash ----------------------------------------------------
+
+  const menus = $$('[data-menu]');
+  const closeMenus = (except) => menus.forEach((m) => { if (m !== except) m.removeAttribute('open'); });
+  menus.forEach((m) => m.addEventListener('toggle', () => { if (m.open) closeMenus(m); }));
+
+  const topSearch = $('[data-topsearch]');
+  const searchToggle = $('[data-search-toggle]');
+  if (topSearch && searchToggle) {
+    searchToggle.setAttribute('role', 'button');
+    searchToggle.setAttribute('aria-expanded', 'false');
+    searchToggle.addEventListener('click', (e) => {
+      e.preventDefault();
+      const open = topSearch.classList.toggle('is-open');
+      searchToggle.setAttribute('aria-expanded', String(open));
+      if (open) { closeMenus(); $('input', topSearch).focus(); }
     });
   }
+  const closeSearch = () => {
+    if (topSearch && topSearch.classList.contains('is-open')) {
+      topSearch.classList.remove('is-open');
+      searchToggle.setAttribute('aria-expanded', 'false');
+    }
+  };
 
   document.addEventListener('click', (e) => {
-    const menu = $('.user-menu[open]');
-    if (menu && !menu.contains(e.target)) menu.removeAttribute('open');
+    if (!e.target.closest('[data-menu]')) closeMenus();
+    if (!e.target.closest('[data-topsearch], [data-search-toggle]')) closeSearch();
     const dismiss = e.target.closest('[data-dismiss]');
     if (dismiss) dismiss.closest('.flash').remove();
   });
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') { const menu = $('.user-menu[open]'); if (menu) menu.removeAttribute('open'); }
+    if (e.key !== 'Escape') return;
+    const open = menus.find((m) => m.open);
+    if (open) { open.removeAttribute('open'); $('summary', open).focus(); }
+    closeSearch();
   });
+  mobile.addEventListener('change', () => { closeMenus(); closeSearch(); });
+
+  // ---- Forms: confirmations and auto-submitting filters ----------------------------------
 
   document.addEventListener('submit', (e) => {
-    const form = e.target;
-    if (form.dataset.confirm && !window.confirm(form.dataset.confirm)) e.preventDefault();
+    const f = e.target;
+    if (f.dataset.confirm && !window.confirm(f.dataset.confirm)) e.preventDefault();
   });
 
-  $$('[data-autosubmit]').forEach((form) => {
-    form.addEventListener('change', () => form.requestSubmit ? form.requestSubmit() : form.submit());
+  $$('[data-autosubmit]').forEach((f) => {
+    f.addEventListener('change', () => (f.requestSubmit ? f.requestSubmit() : f.submit()));
   });
 
-  // Collapse filters by default on small screens.
-  const filters = $('[data-filters]');
-  if (filters && window.matchMedia('(max-width: 860px)').matches) filters.removeAttribute('open');
+  const filterToggle = $('[data-filter-toggle]');
+  if (filterToggle) {
+    const panel = document.getElementById(filterToggle.getAttribute('aria-controls'));
+    filterToggle.addEventListener('click', () => {
+      const open = panel.classList.toggle('is-open');
+      filterToggle.setAttribute('aria-expanded', String(open));
+    });
+  }
 
-  // ---- Copy & share ------------------------------------------------------------------
+  // ---- Copy & share -------------------------------------------------------------------
+
   async function copyText(text) {
     try {
       await navigator.clipboard.writeText(text);
@@ -62,8 +91,8 @@
     } catch {
       const ta = document.createElement('textarea');
       ta.value = text;
-      ta.style.position = 'fixed';
-      ta.style.opacity = '0';
+      ta.setAttribute('readonly', '');
+      ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0';
       document.body.appendChild(ta);
       ta.select();
       let ok = false;
@@ -76,55 +105,58 @@
   document.addEventListener('click', async (e) => {
     const btn = e.target.closest('[data-copy]');
     if (!btn) return;
+    const label = $('span', btn);
+    if (label && !btn.dataset.label) btn.dataset.label = label.textContent;
     const ok = await copyText(btn.dataset.copy);
-    const label = btn.querySelector('span');
-    const original = label ? label.textContent : null;
-    btn.classList.add('copied');
-    if (label) label.textContent = ok ? 'Copied!' : 'Press Ctrl+C';
-    setTimeout(() => {
-      btn.classList.remove('copied');
-      if (label) label.textContent = original;
+    btn.classList.add('is-copied');
+    if (label) label.textContent = ok ? 'Copied' : 'Copy failed';
+    clearTimeout(btn.copyTimer);
+    btn.copyTimer = setTimeout(() => {
+      btn.classList.remove('is-copied');
+      if (label) label.textContent = btn.dataset.label;
     }, 1600);
   });
 
   $$('[data-select-on-focus]').forEach((el) => el.addEventListener('focus', () => el.select()));
 
-  $$('[data-share]').forEach((btn) => {
-    if (!navigator.share) return;
-    btn.hidden = false;
-    btn.addEventListener('click', () => {
-      navigator.share({ title: btn.dataset.shareTitle, url: btn.dataset.shareUrl }).catch(() => {});
+  if (navigator.share) {
+    $$('[data-share]').forEach((btn) => {
+      btn.hidden = false;
+      btn.addEventListener('click', () => {
+        navigator.share({ title: btn.dataset.shareTitle, url: btn.dataset.shareUrl }).catch(() => {});
+      });
     });
-  });
+  }
 
-  // ---- Password visibility ----------------------------------------------------------
+  // ---- Password visibility -------------------------------------------------------------
+
   $$('[data-toggle-password]').forEach((btn) => {
     btn.addEventListener('click', () => {
       const input = document.getElementById(btn.dataset.togglePassword);
       const show = input.type === 'password';
       input.type = show ? 'text' : 'password';
       btn.setAttribute('aria-label', show ? 'Hide password' : 'Show password');
-      btn.textContent = show ? 'hide' : 'show';
+      btn.setAttribute('aria-pressed', String(show));
     });
   });
 
-  // ---- Hover previews on cards ---------------------------------------------------------
-  if (window.matchMedia('(hover: hover)').matches && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+  // ---- Video previews when hovering a card ----------------------------------------------
+
+  if (window.matchMedia('(hover: hover) and (pointer: fine)').matches && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
     $$('.card[data-preview]').forEach((card) => {
       let video = null;
       let timer = null;
       card.addEventListener('mouseenter', () => {
         timer = setTimeout(() => {
-          const media = card.querySelector('.card-media');
           video = document.createElement('video');
           Object.assign(video, { src: card.dataset.preview, muted: true, loop: true, playsInline: true, preload: 'auto' });
           video.setAttribute('aria-hidden', 'true');
           video.style.opacity = '0';
           video.style.transition = 'opacity .2s';
           video.addEventListener('playing', () => { video.style.opacity = '1'; });
-          media.appendChild(video);
+          $('.card-media', card).appendChild(video);
           video.play().catch(() => {});
-        }, 180);
+        }, 160);
       });
       card.addEventListener('mouseleave', () => {
         clearTimeout(timer);
@@ -133,42 +165,44 @@
     });
   }
 
-  // ---- Save (favorite) without reload ------------------------------------------------
-  $$('[data-save-form]').forEach((form) => {
-    form.addEventListener('submit', async (e) => {
+  // ---- Save without a reload -------------------------------------------------------------
+
+  $$('[data-save-form]').forEach((f) => {
+    f.addEventListener('submit', async (e) => {
       e.preventDefault();
-      const btn = $('[data-save-btn]', form);
+      const btn = $('[data-save-btn]', f);
       btn.disabled = true;
       try {
-        const res = await fetch(form.dataset.api, {
+        const res = await fetch(f.dataset.api, {
           method: 'POST',
-          headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'X-CSRF-Token': form.querySelector('[name=_csrf]').value },
+          headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'X-CSRF-Token': f.elements._csrf.value },
           credentials: 'same-origin',
           body: '{}',
         });
         if (!res.ok) throw new Error('failed');
         const data = await res.json();
-        btn.classList.toggle('is-saved', data.saved);
+        btn.classList.toggle('is-on', data.saved);
         btn.setAttribute('aria-pressed', String(data.saved));
         $('span', btn).textContent = data.saved ? 'Saved' : 'Save';
         const count = $('[data-save-count]');
         if (count) count.textContent = data.count;
       } catch {
-        form.submit();
+        f.submit();
       } finally {
         btn.disabled = false;
       }
     });
   });
 
-  // ---- Tag preview ------------------------------------------------------------------------
+  // ---- Tag preview ---------------------------------------------------------------------------
+
   $$('[data-tags-input]').forEach((input) => {
-    const preview = input.parentElement.querySelector('[data-tags-preview]');
+    const preview = $('[data-tags-preview]', input.parentElement);
     const render = () => {
       const tags = [...new Set(input.value.split(/[,#\n]/).map((t) => t.trim().toLowerCase()).filter((t) => t.length >= 2))].slice(0, 15);
       preview.replaceChildren(...tags.map((t) => {
         const s = document.createElement('span');
-        s.className = 'chip';
+        s.className = 'tagchip';
         s.textContent = `#${t}`;
         return s;
       }));
@@ -177,9 +211,10 @@
     render();
   });
 
-  // ---- Upload form -------------------------------------------------------------------------
-  const form = $('[data-upload-form]');
-  if (form) initUpload(form);
+  // ---- Upload and edit form ----------------------------------------------------------------
+
+  const uploadForm = $('[data-upload-form]');
+  if (uploadForm) initUpload(uploadForm);
 
   function initUpload(form) {
     const allowed = JSON.parse(form.dataset.allowed || '{}');
@@ -223,28 +258,40 @@
       formError.hidden = !msg;
     }
 
+    function showThumb(which) {
+      canvas.hidden = which !== 'canvas';
+      thumbImg.hidden = which !== 'img';
+      thumbEmpty.hidden = which !== 'empty';
+    }
+
     function resetThumb() {
       frameBlob = null;
-      canvas.hidden = true;
-      if (!thumbImg.hasAttribute('data-current')) { thumbImg.hidden = true; thumbEmpty.hidden = false; } else { thumbImg.hidden = false; thumbEmpty.hidden = true; }
+      showThumb(thumbImg.hasAttribute('data-current') ? 'img' : 'empty');
       framePicker.hidden = true;
       if (thumbNote) thumbNote.textContent = defaultNote;
       if (video) { video.removeAttribute('src'); video.load(); video = null; }
       if (objectUrl) { URL.revokeObjectURL(objectUrl); objectUrl = null; }
-      ['width', 'height', 'duration'].forEach((k) => { if (meta(k)) meta(k).value = ''; });
+      ['width', 'height', 'duration'].forEach((k) => { meta(k).value = ''; });
+    }
+
+    function drawToCanvas(source, sw, sh) {
+      const w = Math.min(960, sw);
+      const h = Math.round((w / sw) * sh);
+      canvas.width = w;
+      canvas.height = h;
+      canvas.getContext('2d').drawImage(source, 0, 0, w, h);
+      if (!thumbInput.files.length) showThumb('canvas');
+      canvas.toBlob((b) => { frameBlob = b; }, 'image/jpeg', 0.86);
     }
 
     function drawFrame() {
-      const w = Math.min(960, video.videoWidth);
-      const h = Math.round((w / video.videoWidth) * video.videoHeight);
-      canvas.width = w;
-      canvas.height = h;
-      canvas.getContext('2d').drawImage(video, 0, 0, w, h);
-      canvas.hidden = false;
-      thumbEmpty.hidden = true;
-      if (!thumbInput.files.length) thumbImg.hidden = true;
-      canvas.toBlob((b) => { frameBlob = b; }, 'image/jpeg', 0.86);
-      if (frameTime) frameTime.textContent = `Frame at ${formatTime(video.currentTime)}`;
+      drawToCanvas(video, video.videoWidth, video.videoHeight);
+      if (frameTime) frameTime.textContent = `at ${formatTime(video.currentTime)}`;
+    }
+
+    function cantDecode() {
+      framePicker.hidden = true;
+      if (thumbNote) thumbNote.textContent = 'Your browser can\'t play this format, so the thumbnail will be made on the server. You can also upload your own.';
     }
 
     function setupVideo(file) {
@@ -269,11 +316,6 @@
       video.src = objectUrl;
     }
 
-    function cantDecode() {
-      framePicker.hidden = true;
-      if (thumbNote) thumbNote.textContent = 'Your browser can’t preview this format, so we’ll generate a thumbnail on the server (or upload your own).';
-    }
-
     function setupImage(file) {
       if (file.size > 40 * 1024 * 1024) return;
       objectUrl = URL.createObjectURL(file);
@@ -281,15 +323,7 @@
       img.onload = () => {
         meta('width').value = img.naturalWidth;
         meta('height').value = img.naturalHeight;
-        const w = Math.min(960, img.naturalWidth);
-        const h = Math.round((w / img.naturalWidth) * img.naturalHeight);
-        canvas.width = w;
-        canvas.height = h;
-        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
-        canvas.hidden = false;
-        thumbEmpty.hidden = true;
-        thumbImg.hidden = true;
-        canvas.toBlob((b) => { frameBlob = b; }, 'image/jpeg', 0.86);
+        drawToCanvas(img, img.naturalWidth, img.naturalHeight);
       };
       img.src = objectUrl;
     }
@@ -302,12 +336,17 @@
         if (isFinite(audio.duration)) meta('duration').value = audio.duration.toFixed(2);
       });
       audio.src = objectUrl;
-      if (thumbNote) thumbNote.textContent = 'We’ll draw a waveform for the thumbnail automatically.';
+      if (thumbNote) thumbNote.textContent = 'A waveform will be drawn for the thumbnail automatically.';
     }
 
-    function prettyTitle(name) {
-      return name.replace(/\.[^.]+$/, '').replace(/[_\-.]+/g, ' ').replace(/\s+/g, ' ').trim()
-        .replace(/\b\w/g, (c) => c.toUpperCase()).slice(0, 100);
+    const prettyTitle = (name) => name.replace(/\.[^.]+$/, '').replace(/[_\-.]+/g, ' ').replace(/\s+/g, ' ').trim()
+      .replace(/\b\w/g, (c) => c.toUpperCase()).slice(0, 100);
+
+    function reject(msg) {
+      showError(msg);
+      fileInput.value = '';
+      handleFile();
+      showError(msg);
     }
 
     function handleFile() {
@@ -315,26 +354,17 @@
       resetThumb();
       showError('');
       if (!file) {
-        dzEmpty.hidden = false; dzFile.hidden = true; dropzone.classList.remove('has-file');
+        dzEmpty.hidden = false;
+        dzFile.hidden = true;
+        dropzone.classList.remove('has-file');
         return;
       }
       const ext = extOf(file.name);
       const kind = allowed[ext];
-      if (!kind) {
-        showError(ext ? `.${ext} files aren’t accepted. Try zipping it.` : 'That file needs an extension (e.g. .mp4).');
-        fileInput.value = '';
-        return handleFile();
-      }
-      if (file.size > maxBytes) {
-        showError(`That file is ${formatBytes(file.size)} — the limit is ${formatBytes(maxBytes)}.`);
-        fileInput.value = '';
-        return handleFile();
-      }
-      if (!isEdit && file.size > remaining) {
-        showError(`Not enough storage left (${formatBytes(remaining)} remaining).`);
-        fileInput.value = '';
-        return handleFile();
-      }
+      if (!kind) return reject(ext ? `.${ext} files aren't accepted. Try zipping it.` : 'That file needs an extension, like .mp4.');
+      if (file.size > maxBytes) return reject(`That file is ${formatBytes(file.size)}. The limit is ${formatBytes(maxBytes)}.`);
+      if (!isEdit && file.size > remaining) return reject(`Not enough storage left. You have ${formatBytes(remaining)} remaining.`);
+
       dzEmpty.hidden = true;
       dzFile.hidden = false;
       dropzone.classList.add('has-file');
@@ -352,36 +382,33 @@
       return undefined;
     }
 
+    function takeDropped(files) {
+      if (!files.length) return;
+      const dt = new DataTransfer();
+      dt.items.add(files[0]);
+      fileInput.files = dt.files;
+      handleFile();
+    }
+
     fileInput.addEventListener('change', handleFile);
-    if (fileInput.files.length) handleFile(); // restored by browser after back navigation
+    if (fileInput.files.length) handleFile(); // restored by the browser after back navigation
 
     ['dragenter', 'dragover'].forEach((t) => dropzone.addEventListener(t, (e) => {
       e.preventDefault();
-      dropzone.classList.add('dragover');
+      dropzone.classList.add('is-over');
     }));
     ['dragleave', 'drop'].forEach((t) => dropzone.addEventListener(t, (e) => {
       e.preventDefault();
       if (t === 'dragleave' && dropzone.contains(e.relatedTarget)) return;
-      dropzone.classList.remove('dragover');
+      dropzone.classList.remove('is-over');
     }));
-    dropzone.addEventListener('drop', (e) => {
-      if (!e.dataTransfer.files.length) return;
-      const dt = new DataTransfer();
-      dt.items.add(e.dataTransfer.files[0]);
-      fileInput.files = dt.files;
-      handleFile();
-    });
-    // Allow dropping anywhere on the page while on the upload form.
+    dropzone.addEventListener('drop', (e) => takeDropped(e.dataTransfer.files));
+    // Dropping anywhere on the page counts too.
     window.addEventListener('dragover', (e) => e.preventDefault());
     window.addEventListener('drop', (e) => {
       if (dropzone.contains(e.target)) return;
       e.preventDefault();
-      if (e.dataTransfer.files.length) {
-        const dt = new DataTransfer();
-        dt.items.add(e.dataTransfer.files[0]);
-        fileInput.files = dt.files;
-        handleFile();
-      }
+      takeDropped(e.dataTransfer.files);
     });
 
     if (frameRange) {
@@ -398,21 +425,20 @@
       const f = thumbInput.files[0];
       if (!f) {
         if (video && video.videoWidth) drawFrame();
-        else if (!canvas.width) { thumbImg.hidden = !thumbImg.hasAttribute('data-current'); thumbEmpty.hidden = !thumbImg.hidden; }
+        else if (!canvas.width) showThumb(thumbImg.hasAttribute('data-current') ? 'img' : 'empty');
+        else showThumb('canvas');
         return;
       }
       thumbImg.removeAttribute('data-current');
       thumbImg.src = URL.createObjectURL(f);
-      thumbImg.hidden = false;
-      canvas.hidden = true;
-      thumbEmpty.hidden = true;
+      showThumb('img');
     });
 
-    // ---- Sending: browser → storage directly, then tell the API ----------------------
-    // 1. POST /api/uploads with file names and sizes → signed storage URLs
-    // 2. PUT each file (big ones in parts, several at a time, with retries) straight to storage
+    // ---- Sending: browser to storage directly, then tell the API ----------------------
+    // 1. POST /api/uploads with file names and sizes, get signed storage URLs back
+    // 2. PUT each file straight to storage (big ones in parts, several at a time, with retries)
     // 3. POST /api/uploads/:id/complete for multipart uploads
-    // 4. POST the details + upload IDs to create (or update) the asset
+    // 4. POST the details and upload IDs to create (or update) the asset
     const active = new Set();
     let busy = false;
     let cancelled = false;
@@ -445,9 +471,9 @@
       tickets.forEach((t) => api(`/api/uploads/${t.id}/abort`).catch(() => {}));
     });
 
-    // One PUT with progress. Resolves with the ETag (needed to finish multipart uploads).
+    // One PUT with progress. Resolves with the ETag, which finishing a multipart upload needs.
     function put(url, body, headers, onProgress) {
-      return new Promise((resolve, reject) => {
+      return new Promise((resolve, rejectPut) => {
         const x = new XMLHttpRequest();
         active.add(x);
         x.open('PUT', url);
@@ -455,10 +481,10 @@
         x.upload.addEventListener('progress', (ev) => onProgress(ev.loaded));
         x.addEventListener('load', () => {
           active.delete(x);
-          if (x.status >= 200 && x.status < 300) { onProgress(body.size); resolve(x.getResponseHeader('ETag')); } else reject(new Error(`Storage answered ${x.status}`));
+          if (x.status >= 200 && x.status < 300) { onProgress(body.size); resolve(x.getResponseHeader('ETag')); } else rejectPut(new Error(`Storage answered ${x.status}`));
         });
-        x.addEventListener('error', () => { active.delete(x); reject(new Error('network')); });
-        x.addEventListener('abort', () => { active.delete(x); reject(new Error('cancelled')); });
+        x.addEventListener('error', () => { active.delete(x); rejectPut(new Error('network')); });
+        x.addEventListener('abort', () => { active.delete(x); rejectPut(new Error('cancelled')); });
         x.send(body);
       });
     }
@@ -494,7 +520,7 @@
             () => put(part.url, chunk, null, (n) => { loaded[i] = n; report(); }),
             () => { loaded[i] = 0; report(); },
           );
-          if (!etag) throw new Error('Storage didn’t return an ETag. Check the bucket’s CORS settings (ExposeHeaders: ETag).');
+          if (!etag) throw new Error('Storage didn\'t return an ETag. Check the bucket\'s CORS settings (ExposeHeaders: ETag).');
           etags.push({ number: part.number, etag });
         }
       };
@@ -522,8 +548,9 @@
     function showFieldErrors(errors) {
       $$('[aria-invalid=true]', form).forEach((el) => el.removeAttribute('aria-invalid'));
       $$('.field-error[data-js]', form).forEach((el) => el.remove());
+      let first = null;
       Object.entries(errors || {}).forEach(([field, msg]) => {
-        const el = form.elements[field] || form.querySelector(`[name="${field}"]`) || (field === 'file' ? fileInput : null);
+        const el = form.elements[field] || (field === 'file' ? fileInput : null);
         const node = el && el.length && !el.tagName ? el[0] : el;
         if (!node) return;
         node.setAttribute('aria-invalid', 'true');
@@ -531,10 +558,12 @@
         p.className = 'field-error';
         p.dataset.js = '1';
         p.textContent = msg;
-        const anchor = node.closest('.field, .dropzone, .check, fieldset') || node;
+        const anchor = node.closest('.drop, .field, .check, fieldset') || node;
         anchor.insertAdjacentElement('afterend', p);
+        if (!first) first = anchor;
       });
       if (errors && errors.file) dropzone.classList.add('has-error');
+      if (first) first.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
 
     form.addEventListener('submit', async (e) => {
@@ -546,7 +575,7 @@
       const main = fileInput.files[0];
       if (!isEdit && !main) { showError('Choose a file to upload.'); return; }
 
-      // What to send: the file, a thumbnail (picked frame or custom image), an optional preview.
+      // What to send: the file, a thumbnail (picked frame or custom image) and an optional preview.
       const blobs = {};
       if (main) blobs.file = main;
       if (thumbInput.files[0]) blobs.thumbnail = thumbInput.files[0];
@@ -559,7 +588,7 @@
       submitBtn.disabled = true;
       progress.hidden = false;
       progressFill.style.width = '0';
-      progressText.textContent = 'Preparing…';
+      progressText.textContent = 'Preparing';
       const total = Object.values(blobs).reduce((n, b) => n + b.size, 0);
       const sent = {};
       const started = Date.now();
@@ -569,7 +598,7 @@
         const secs = (Date.now() - started) / 1000;
         const rate = done / Math.max(secs, 0.1);
         progressFill.style.width = `${pct.toFixed(1)}%`;
-        progressText.textContent = pct >= 100 ? 'Finishing…'
+        progressText.textContent = pct >= 100 ? 'Finishing'
           : `${Math.floor(pct)}% · ${formatBytes(done)} of ${formatBytes(total)} · ${formatBytes(rate)}/s${secs > 2 ? ` · ${formatTime((total - done) / Math.max(rate, 1))} left` : ''}`;
       };
 
@@ -582,10 +611,11 @@
           await Promise.all(res.uploads.map((t) => send(t, blobs[t.field], (n) => { sent[t.field] = n; tick(); })));
           res.uploads.forEach((t) => { ids[t.field] = t.id; });
         }
-        progressText.textContent = 'Saving…';
+        progressText.textContent = 'Saving';
         const saved = await api(form.dataset.api, { ...details(), uploads: ids });
         busy = false;
-        progressText.textContent = 'Done. Opening your asset…';
+        progressFill.style.width = '100%';
+        progressText.textContent = 'Done. Opening your asset';
         window.location.href = isEdit ? (saved.url || form.dataset.redirect) : `${saved.url}?uploaded=1`;
       } catch (err) {
         busy = false;
