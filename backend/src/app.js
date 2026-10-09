@@ -8,7 +8,7 @@ const { createModels } = require('./models');
 const { createStorage } = require('./storage');
 const { createMedia } = require('./media');
 const { parseCookies, safeEqual, securityHeaders, createLimiter, createSeenCache } = require('./security');
-const views = require('./views');
+const views = require('../../frontend/views');
 
 function createApp(config, { log = console } = {}) {
   fs.mkdirSync(config.dataDir, { recursive: true });
@@ -69,7 +69,7 @@ function createApp(config, { log = console } = {}) {
     });
   }
 
-  app.use('/static', express.static(path.join(config.root, 'public'), { maxAge: config.production ? '7d' : 0, index: false }));
+  app.use('/static', express.static(path.join(config.root, 'frontend', 'public'), { maxAge: config.production ? '7d' : 0, index: false }));
   app.get('/favicon.ico', (req, res) => res.redirect(301, '/static/favicon.svg'));
 
   // Cookies, session, CSRF token, flash messages and rendering helpers.

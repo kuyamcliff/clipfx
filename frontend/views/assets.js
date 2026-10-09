@@ -1,8 +1,8 @@
 'use strict';
-const { html, raw, richText, formatBytes, formatCount, formatDate } = require('../html');
+const { html, raw, richText, formatBytes, formatCount, formatDate } = require('../../backend/src/html');
 const { layout } = require('./layout');
 const { csrfField, assetGrid, fieldError, invalid, meter } = require('./components');
-const { CATEGORIES, SOFTWARE, LICENSES, FILE_TYPES, KIND_CATEGORY, PREVIEW_EXTS } = require('../catalog');
+const { CATEGORIES, SOFTWARE, LICENSES, FILE_TYPES, KIND_CATEGORY, PREVIEW_EXTS } = require('../../backend/src/catalog');
 
 // ---- Asset page ------------------------------------------------------------------
 

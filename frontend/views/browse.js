@@ -1,8 +1,8 @@
 'use strict';
-const { html, formatCount, formatBytes, formatDate, timeAgo, richText } = require('../html');
+const { html, formatCount, formatBytes, formatDate, timeAgo, richText } = require('../../backend/src/html');
 const { layout } = require('./layout');
 const { avatar, assetGrid, pagination, emptyState, meter, pageHref } = require('./components');
-const { SOFTWARE, LICENSES, KINDS, CATEGORY_MAP, SOFTWARE_MAP, LICENSE_MAP } = require('../catalog');
+const { SOFTWARE, LICENSES, KINDS, CATEGORY_MAP, SOFTWARE_MAP, LICENSE_MAP } = require('../../backend/src/catalog');
 
 function catNav(categories, activeId) {
   return html`<nav class="cat-nav" aria-label="Categories">
