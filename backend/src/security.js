@@ -37,32 +37,6 @@ function safeEqual(a, b) {
   return ba.length === bb.length && ba.length > 0 && crypto.timingSafeEqual(ba, bb);
 }
 
-function securityHeaders(config) {
-  const csp = [
-    "default-src 'self'",
-    "img-src 'self' data: blob:",
-    "media-src 'self' blob:",
-    "script-src 'self'",
-    "style-src 'self' 'unsafe-inline'",
-    "font-src 'self'",
-    "connect-src 'self'",
-    "object-src 'none'",
-    "base-uri 'self'",
-    "form-action 'self'",
-    "frame-ancestors 'none'",
-  ].join('; ');
-  return (req, res, next) => {
-    res.setHeader('Content-Security-Policy', csp);
-    res.setHeader('X-Content-Type-Options', 'nosniff');
-    res.setHeader('X-Frame-Options', 'DENY');
-    res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
-    res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
-    res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), interest-cohort=()');
-    if (config.cookieSecure) res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
-    next();
-  };
-}
-
 // Fixed-window in-memory rate limiter. Good enough for a single-process deployment.
 function createLimiter() {
   const hits = new Map();
@@ -94,4 +68,4 @@ function createSeenCache(ttlMs) {
   };
 }
 
-module.exports = { hashPassword, verifyPassword, parseCookies, safeEqual, securityHeaders, createLimiter, createSeenCache };
+module.exports = { hashPassword, verifyPassword, parseCookies, safeEqual, createLimiter, createSeenCache };

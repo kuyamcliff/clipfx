@@ -1,22 +1,23 @@
 'use strict';
+// ClipFX JSON API. The frontend (Vercel) renders pages and proxies /api/* here.
+// File bytes never pass through this server: browsers upload to and download from storage directly.
 const fs = require('node:fs');
-const path = require('node:path');
-const crypto = require('node:crypto');
 const express = require('express');
 const { openDb } = require('./db');
 const { createModels } = require('./models');
 const { createStorage } = require('./storage');
 const { createMedia } = require('./media');
-const { parseCookies, safeEqual, securityHeaders, createLimiter, createSeenCache } = require('./security');
-const views = require('../../frontend/views');
+const { parseCookies, safeEqual, createLimiter, createSeenCache } = require('./security');
+
+const UPLOAD_TTL = 24 * 3600 * 1000;
 
 function createApp(config, { log = console } = {}) {
   fs.mkdirSync(config.dataDir, { recursive: true });
   fs.mkdirSync(config.tmpDir, { recursive: true });
 
   const db = openDb(config.dbFile);
-  const models = createModels(db);
-  const storage = createStorage(config.uploadDir);
+  const storage = createStorage(config);
+  const models = createModels(db, { storage });
   const media = createMedia({ config, models, storage, log });
   media.resume();
 
@@ -26,129 +27,134 @@ function createApp(config, { log = console } = {}) {
   app.set('trust proxy', config.trustProxy);
 
   const cookieBase = { httpOnly: true, sameSite: 'lax', secure: config.cookieSecure, path: '/' };
+  const allowedHosts = new Set([config.baseUrl, ...config.allowedOrigins].filter(Boolean).map((u) => new URL(u).host));
 
   const ctx = {
-    config, models, storage, media, views, log, cookieBase,
+    config, models, storage, media, log, cookieBase,
     seenView: createSeenCache(6 * 3600 * 1000),
     seenDownload: createSeenCache(6 * 3600 * 1000),
-    absolute: (req, p) => `${config.baseUrl || `${req.protocol}://${req.get('host')}`}${p}`,
-    wantsJson: (req) => req.xhr || /application\/json/.test(req.get('accept') || ''),
-    checkCsrf: (req) => safeEqual(req.get('x-csrf-token') || (req.body && req.body._csrf), req.cookies.csrf),
+    // Share links point at the frontend.
+    absolute: (req, p) => `${config.baseUrl || `${req.protocol}://${req.get('x-forwarded-host') || req.get('host')}`}${p}`,
     rate(name, max, windowMs) {
       return (req, res, next) => {
         if (!config.rateLimits) return next();
-        const r = limiter(`${name}:${req.ip}`, max, windowMs);
+        const r = limiter(`${name}:${req.clientIp}`, max, windowMs);
         if (r.ok) return next();
         res.setHeader('Retry-After', String(r.retryAfter));
-        return res.fail(429, 'Slow down', 'You’re doing that a bit too often. Please wait a few minutes and try again.');
+        return res.fail(429, 'You’re doing that too often. Wait a few minutes and try again.');
       };
     },
     requireUser(req, res, next) {
       if (req.user) return next();
-      if (ctx.wantsJson(req)) return res.status(401).json({ ok: false, error: 'Please log in first.' });
-      return res.redirect(`/login?next=${encodeURIComponent(req.originalUrl)}`);
+      return res.fail(401, 'Please log in first.');
     },
     requireAdmin(req, res, next) {
       if (req.user && req.user.role === 'admin') return next();
-      return res.fail(404, 'Page not found', 'We couldn’t find that page.');
+      return res.fail(404, 'Not found.');
     },
     login(res, userId) {
       res.cookie('sid', models.sessions.create(userId), { ...cookieBase, maxAge: 30 * 24 * 3600 * 1000 });
     },
+    isAdmin: (req) => !!(req.user && req.user.role === 'admin'),
   };
 
-  app.use(securityHeaders(config));
+  app.use((req, res, next) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Referrer-Policy', 'no-referrer');
+    res.setHeader('X-Frame-Options', 'DENY');
+    res.setHeader('Cache-Control', 'no-store');
+    next();
+  });
 
   if (config.logRequests) {
     app.use((req, res, next) => {
       const start = Date.now();
-      res.on('finish', () => {
-        if (!req.path.startsWith('/static')) log.log(`${req.method} ${req.originalUrl} ${res.statusCode} ${Date.now() - start}ms`);
-      });
+      res.on('finish', () => log.log(`${req.method} ${req.originalUrl.split('?')[0]} ${res.statusCode} ${Date.now() - start}ms`));
       next();
     });
   }
 
-  app.use('/static', express.static(path.join(config.root, 'frontend', 'public'), { maxAge: config.production ? '7d' : 0, index: false }));
-  app.get('/favicon.ico', (req, res) => res.redirect(301, '/static/favicon.svg'));
+  app.get('/healthz', (req, res) => {
+    db.prepare('SELECT 1').get();
+    res.json({ ok: true, storage: storage.kind, media: media.available });
+  });
 
-  // Cookies, session, CSRF token, flash messages and rendering helpers.
+  // Request context: client IP, cookies, session and response helpers.
   app.use((req, res, next) => {
+    // The frontend forwards the visitor's IP; only believe it when it proves it's our frontend.
+    const trusted = config.internalSecret && safeEqual(req.get('x-internal-secret'), config.internalSecret);
+    req.clientIp = (trusted && req.get('x-client-ip')) || req.ip;
     req.cookies = parseCookies(req.headers.cookie);
-    let csrf = req.cookies.csrf;
-    if (!csrf || csrf.length < 20) {
-      csrf = crypto.randomBytes(24).toString('base64url');
-      req.cookies.csrf = '';
-      res.cookie('csrf', csrf, { ...cookieBase, maxAge: 365 * 24 * 3600 * 1000 });
-    }
     const user = models.sessions.user(req.cookies.sid);
     req.user = user && !user.banned ? user : null;
     if (req.cookies.sid && !req.user) res.clearCookie('sid', cookieBase);
-
-    let flash = null;
-    if (req.cookies.flash) {
-      try { flash = JSON.parse(Buffer.from(req.cookies.flash, 'base64url').toString()); } catch { flash = null; }
-      res.clearCookie('flash', cookieBase);
-    }
-    res.flash = (type, message) => {
-      res.cookie('flash', Buffer.from(JSON.stringify({ type, message })).toString('base64url'), { ...cookieBase, maxAge: 60 * 1000 });
-    };
-    Object.assign(res.locals, {
-      config, user: req.user, csrf, flash, path: req.path, query: req.query,
-      openReports: req.user && req.user.role === 'admin' ? models.reports.openCount() : 0,
-      absolute: (p) => ctx.absolute(req, p),
-    });
-    res.view = (view, data = {}, status = 200) => res.status(status).type('html').send(String(view(res.locals, data)));
-    res.fail = (status, title, message) => {
-      if (ctx.wantsJson(req)) return res.status(status).json({ ok: false, error: message });
-      return res.view(views.error, { status, title, message }, status);
-    };
+    res.ok = (data = {}, status = 200) => res.status(status).json({ ok: true, ...data });
+    res.fail = (status, error, errors) => res.status(status).json({ ok: false, error, ...(errors ? { errors } : {}) });
     next();
   });
 
-  app.use(express.urlencoded({ extended: false, limit: '200kb', parameterLimit: 200 }));
-  app.use(express.json({ limit: '100kb' }));
+  // Local storage only: the stand-in for R2's presigned URLs. Mounted before the JSON parser
+  // because uploads arrive as raw bodies.
+  if (storage.kind === 'local') require('./routes/blob')(app, ctx);
 
-  // CSRF: same-origin check + double-submit token. Multipart forms without the header
-  // are verified after parsing, inside the upload handlers.
+  app.use(express.json({ limit: '200kb' }));
+
+  // CSRF: browsers can only reach us through the frontend, which sends the double-submit token.
+  // Writes must also come from an allowed origin, and must be JSON (HTML forms can't send that cross-site).
   app.use((req, res, next) => {
-    if (req.method !== 'POST') return next();
+    if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return next();
     const origin = req.get('origin');
     if (origin && origin !== 'null') {
       let host = null;
       try { host = new URL(origin).host; } catch { /* invalid */ }
-      const allowed = [req.get('host'), config.baseUrl && new URL(config.baseUrl).host].filter(Boolean);
-      if (!allowed.includes(host)) return res.fail(403, 'Request blocked', 'That request came from another site, so we blocked it.');
+      if (!allowedHosts.has(host) && host !== req.get('host') && host !== req.get('x-forwarded-host')) {
+        return res.fail(403, 'That request came from another site, so it was blocked.');
+      }
     }
-    if (req.is('multipart/form-data') && !req.get('x-csrf-token')) { req.csrfDeferred = true; return next(); }
-    if (!ctx.checkCsrf(req)) return res.fail(403, 'Session expired', 'Your form expired. Go back, refresh the page and try again.');
+    if (!req.is('application/json') && Number(req.get('content-length') || 0) > 0) return res.fail(415, 'Send JSON.');
+    if (!safeEqual(req.get('x-csrf-token'), req.cookies.csrf)) return res.fail(403, 'Your session expired. Refresh the page and try again.');
+    req.body = req.body || {};
     return next();
   });
 
-  require('./routes/pages')(app, ctx);
+  require('./routes/meta')(app, ctx);
   require('./routes/auth')(app, ctx);
-  require('./routes/browse')(app, ctx);
+  require('./routes/uploads')(app, ctx);
   require('./routes/assets')(app, ctx);
-  require('./routes/account')(app, ctx);
+  require('./routes/users')(app, ctx);
   require('./routes/admin')(app, ctx);
 
-  app.use((req, res) => res.fail(404, 'Page not found', 'We couldn’t find that page. It may have been moved or deleted.'));
+  app.use((req, res) => res.fail(404, 'Not found.'));
 
   // eslint-disable-next-line no-unused-vars
   app.use((err, req, res, next) => {
-    if (err.type === 'entity.too.large') return res.fail(413, 'Too large', 'That request was too large.');
-    if (err.status === 400 || err.type === 'entity.parse.failed') return res.fail(400, 'Bad request', 'We couldn’t understand that request.');
+    if (err.type === 'entity.too.large') return res.fail(413, 'That request was too large.');
+    if (err.type === 'entity.parse.failed') return res.fail(400, 'Invalid JSON.');
+    if (err.status && err.status < 500) return res.fail(err.status, err.message);
     log.error(err);
     if (res.headersSent) return res.end();
-    return res.fail(500, 'Something went wrong', 'An unexpected error happened on our side. Please try again in a moment.');
+    return res.fail(500, 'Something went wrong on our side. Please try again.');
   });
 
-  const purge = setInterval(() => models.sessions.purgeExpired(), 3600 * 1000);
-  purge.unref();
+  // Housekeeping: expired sessions, and uploads that were never attached to an asset.
+  async function sweep() {
+    models.sessions.purgeExpired();
+    for (const u of models.uploads.stale(Date.now() - UPLOAD_TTL)) {
+      try {
+        if (u.multipart_id) await storage.abortMultipart(u.key, u.multipart_id);
+        await storage.remove(u.key);
+        models.uploads.remove(u.id);
+      } catch (err) {
+        log.warn(`[sweep] couldn't clean upload ${u.id}: ${err.message}`);
+      }
+    }
+  }
+  const timer = setInterval(() => sweep().catch((err) => log.warn(`[sweep] ${err.message}`)), 3600 * 1000);
+  timer.unref();
 
   return {
-    app, db, models, storage, media,
-    close() { clearInterval(purge); db.close(); },
+    app, db, models, storage, media, sweep,
+    close() { clearInterval(timer); db.close(); },
   };
 }
 

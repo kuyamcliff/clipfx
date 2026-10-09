@@ -1,21 +1,15 @@
 {
   "name": "clipfx",
-  "version": "1.0.0",
   "private": true,
-  "description": "A free, nonprofit place for video editors and motion designers to share footage, templates, LUTs, sound effects and other editing assets.",
-  "main": "backend/src/server.js",
+  "description": "ClipFX: a nonprofit library of free editing assets. frontend/ runs on Vercel, backend/ on Render, files in Cloudflare R2.",
   "scripts": {
-    "start": "node --disable-warning=ExperimentalWarning backend/src/server.js",
-    "dev": "node --disable-warning=ExperimentalWarning --watch backend/src/server.js",
-    "test": "node --disable-warning=ExperimentalWarning --test --test-concurrency=1 \"backend/test/*.test.js\"",
-    "seed": "node --disable-warning=ExperimentalWarning backend/scripts/seed.js"
+    "setup": "npm --prefix backend install && npm --prefix frontend install",
+    "dev": "node dev.js",
+    "test": "npm --prefix backend test && npm --prefix frontend test",
+    "seed": "npm --prefix backend run seed"
   },
   "engines": {
     "node": ">=22.13"
   },
-  "license": "MIT",
-  "dependencies": {
-    "express": "^5.2.1",
-    "multer": "^2.4.0"
-  }
+  "license": "MIT"
 }

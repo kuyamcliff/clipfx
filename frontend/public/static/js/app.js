@@ -140,10 +140,11 @@
       const btn = $('[data-save-btn]', form);
       btn.disabled = true;
       try {
-        const res = await fetch(form.action, {
+        const res = await fetch(form.dataset.api, {
           method: 'POST',
-          headers: { Accept: 'application/json', 'X-CSRF-Token': form.querySelector('[name=_csrf]').value },
+          headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'X-CSRF-Token': form.querySelector('[name=_csrf]').value },
           credentials: 'same-origin',
+          body: '{}',
         });
         if (!res.ok) throw new Error('failed');
         const data = await res.json();
@@ -192,6 +193,7 @@
     const dzEmpty = $('[data-dz-empty]', form);
     const dzFile = $('[data-dz-file]', form);
     const thumbInput = $('#thumbnail', form);
+    const previewInput = $('#preview', form);
     const canvas = $('[data-thumb-canvas]', form);
     const thumbImg = $('[data-thumb-img]', form);
     const thumbEmpty = $('[data-thumb-empty]', form);
@@ -212,7 +214,6 @@
     let frameBlob = null;
     let objectUrl = null;
     let video = null;
-    let xhr = null;
     const defaultNote = thumbNote ? thumbNote.textContent : '';
 
     const extOf = (name) => { const m = /\.([a-z0-9]{1,10})$/i.exec(name || ''); return m ? m[1].toLowerCase() : ''; };
@@ -407,73 +408,193 @@
       thumbEmpty.hidden = true;
     });
 
+    // ---- Sending: browser → storage directly, then tell the API ----------------------
+    // 1. POST /api/uploads with file names and sizes → signed storage URLs
+    // 2. PUT each file (big ones in parts, several at a time, with retries) straight to storage
+    // 3. POST /api/uploads/:id/complete for multipart uploads
+    // 4. POST the details + upload IDs to create (or update) the asset
+    const active = new Set();
+    let busy = false;
+    let cancelled = false;
+    const tickets = [];
+
     window.addEventListener('beforeunload', (e) => {
-      if (xhr) { e.preventDefault(); e.returnValue = ''; }
+      if (busy) { e.preventDefault(); e.returnValue = ''; }
     });
 
-    cancelBtn.addEventListener('click', () => { if (xhr) xhr.abort(); });
-
-    form.addEventListener('submit', (e) => {
-      if (!window.FormData || !window.XMLHttpRequest) return; // fall back to normal post
-      e.preventDefault();
-      showError('');
-      if (!form.reportValidity()) return;
-      if (!isEdit && !fileInput.files.length) { showError('Choose a file to upload.'); return; }
-
-      const data = new FormData(form);
-      if (!thumbInput.files.length) {
-        data.delete('thumbnail');
-        if (frameBlob && (!isEdit || fileInput.files.length)) data.append('thumbnail', frameBlob, 'thumbnail.jpg');
+    async function api(path, body) {
+      const res = await fetch(path, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'X-CSRF-Token': form.dataset.csrf },
+        credentials: 'same-origin',
+        body: JSON.stringify(body || {}),
+      });
+      let data = null;
+      try { data = await res.json(); } catch { data = null; }
+      if (!res.ok || !data || !data.ok) {
+        const err = new Error((data && data.error) || `Request failed (${res.status}).`);
+        err.errors = data && data.errors;
+        throw err;
       }
-      ['file', 'preview'].forEach((n) => { const v = data.get(n); if (v && v instanceof File && !v.name) data.delete(n); });
+      return data;
+    }
 
-      xhr = new XMLHttpRequest();
-      xhr.open('POST', form.action);
-      xhr.setRequestHeader('Accept', 'application/json');
-      xhr.setRequestHeader('X-CSRF-Token', form.dataset.csrf);
-      const started = Date.now();
-      progress.hidden = false;
+    cancelBtn.addEventListener('click', () => {
+      cancelled = true;
+      active.forEach((x) => x.abort());
+      tickets.forEach((t) => api(`/api/uploads/${t.id}/abort`).catch(() => {}));
+    });
+
+    // One PUT with progress. Resolves with the ETag (needed to finish multipart uploads).
+    function put(url, body, headers, onProgress) {
+      return new Promise((resolve, reject) => {
+        const x = new XMLHttpRequest();
+        active.add(x);
+        x.open('PUT', url);
+        Object.entries(headers || {}).forEach(([k, v]) => x.setRequestHeader(k, v));
+        x.upload.addEventListener('progress', (ev) => onProgress(ev.loaded));
+        x.addEventListener('load', () => {
+          active.delete(x);
+          if (x.status >= 200 && x.status < 300) { onProgress(body.size); resolve(x.getResponseHeader('ETag')); } else reject(new Error(`Storage answered ${x.status}`));
+        });
+        x.addEventListener('error', () => { active.delete(x); reject(new Error('network')); });
+        x.addEventListener('abort', () => { active.delete(x); reject(new Error('cancelled')); });
+        x.send(body);
+      });
+    }
+
+    async function withRetry(fn, onRetry) {
+      for (let attempt = 1; ; attempt++) {
+        try {
+          return await fn();
+        } catch (err) {
+          if (cancelled || attempt >= 4) throw err;
+          onRetry();
+          await new Promise((r) => setTimeout(r, 1000 * 2 ** attempt));
+        }
+      }
+    }
+
+    async function send(ticket, blob, onProgress) {
+      if (ticket.method === 'put') {
+        await withRetry(() => put(ticket.url, blob, ticket.headers, onProgress), () => onProgress(0));
+        return;
+      }
+      const loaded = new Array(ticket.parts.length).fill(0);
+      const report = () => onProgress(loaded.reduce((a, b) => a + b, 0));
+      const etags = [];
+      const queue = ticket.parts.slice();
+      const worker = async () => {
+        while (queue.length && !cancelled) {
+          const part = queue.shift();
+          const start = (part.number - 1) * ticket.partSize;
+          const chunk = blob.slice(start, start + part.size);
+          const i = part.number - 1;
+          const etag = await withRetry(
+            () => put(part.url, chunk, null, (n) => { loaded[i] = n; report(); }),
+            () => { loaded[i] = 0; report(); },
+          );
+          if (!etag) throw new Error('Storage didn’t return an ETag. Check the bucket’s CORS settings (ExposeHeaders: ETag).');
+          etags.push({ number: part.number, etag });
+        }
+      };
+      await Promise.all(Array.from({ length: Math.min(4, ticket.parts.length) }, worker));
+      if (cancelled) throw new Error('cancelled');
+      await api(`/api/uploads/${ticket.id}/complete`, { parts: etags });
+    }
+
+    function details() {
+      const val = (name) => { const el = form.elements[name]; return el ? el.value : ''; };
+      const on = (name) => !!(form.elements[name] && form.elements[name].checked);
+      return {
+        title: val('title'), category: val('category'), tags: val('tags'), description: val('description'),
+        license: (form.querySelector('[name=license]:checked') || {}).value || '',
+        visibility: (form.querySelector('[name=visibility]:checked') || {}).value || 'public',
+        software: $$('[name=software]:checked', form).map((el) => el.value),
+        rights: on('rights'), removeThumb: on('removeThumb'), removePreview: on('removePreview'),
+        keepThumb: on('keepThumb'), keepPreview: on('keepPreview'),
+        width: Number(meta('width').value) || undefined,
+        height: Number(meta('height').value) || undefined,
+        duration: Number(meta('duration').value) || undefined,
+      };
+    }
+
+    function showFieldErrors(errors) {
+      $$('[aria-invalid=true]', form).forEach((el) => el.removeAttribute('aria-invalid'));
+      $$('.field-error[data-js]', form).forEach((el) => el.remove());
+      Object.entries(errors || {}).forEach(([field, msg]) => {
+        const el = form.elements[field] || form.querySelector(`[name="${field}"]`) || (field === 'file' ? fileInput : null);
+        const node = el && el.length && !el.tagName ? el[0] : el;
+        if (!node) return;
+        node.setAttribute('aria-invalid', 'true');
+        const p = document.createElement('p');
+        p.className = 'field-error';
+        p.dataset.js = '1';
+        p.textContent = msg;
+        const anchor = node.closest('.field, .dropzone, .check, fieldset') || node;
+        anchor.insertAdjacentElement('afterend', p);
+      });
+      if (errors && errors.file) dropzone.classList.add('has-error');
+    }
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      if (busy) return;
+      showError('');
+      showFieldErrors({});
+      if (!form.reportValidity()) return;
+      const main = fileInput.files[0];
+      if (!isEdit && !main) { showError('Choose a file to upload.'); return; }
+
+      // What to send: the file, a thumbnail (picked frame or custom image), an optional preview.
+      const blobs = {};
+      if (main) blobs.file = main;
+      if (thumbInput.files[0]) blobs.thumbnail = thumbInput.files[0];
+      else if (frameBlob && (!isEdit || main)) blobs.thumbnail = new File([frameBlob], 'thumbnail.jpg', { type: 'image/jpeg' });
+      if (previewInput && previewInput.files[0]) blobs.preview = previewInput.files[0];
+
+      busy = true;
+      cancelled = false;
+      tickets.length = 0;
       submitBtn.disabled = true;
-
-      xhr.upload.addEventListener('progress', (ev) => {
-        if (!ev.lengthComputable) return;
-        const pct = (ev.loaded / ev.total) * 100;
+      progress.hidden = false;
+      progressFill.style.width = '0';
+      progressText.textContent = 'Preparing…';
+      const total = Object.values(blobs).reduce((n, b) => n + b.size, 0);
+      const sent = {};
+      const started = Date.now();
+      const tick = () => {
+        const done = Object.values(sent).reduce((a, b) => a + b, 0);
+        const pct = total ? Math.min(100, (done / total) * 100) : 100;
         const secs = (Date.now() - started) / 1000;
-        const rate = ev.loaded / Math.max(secs, 0.1);
-        const eta = (ev.total - ev.loaded) / Math.max(rate, 1);
+        const rate = done / Math.max(secs, 0.1);
         progressFill.style.width = `${pct.toFixed(1)}%`;
-        progressText.textContent = pct >= 100
-          ? 'Processing…'
-          : `${Math.floor(pct)}% · ${formatBytes(ev.loaded)} of ${formatBytes(ev.total)} · ${formatBytes(rate)}/s${secs > 2 ? ` · ${formatTime(eta)} left` : ''}`;
-      });
+        progressText.textContent = pct >= 100 ? 'Finishing…'
+          : `${Math.floor(pct)}% · ${formatBytes(done)} of ${formatBytes(total)} · ${formatBytes(rate)}/s${secs > 2 ? ` · ${formatTime((total - done) / Math.max(rate, 1))} left` : ''}`;
+      };
 
-      const done = () => { xhr = null; submitBtn.disabled = false; progress.hidden = true; progressFill.style.width = '0'; };
-
-      xhr.addEventListener('load', () => {
-        let res = null;
-        try { res = JSON.parse(xhr.responseText); } catch { res = null; }
-        if (xhr.status < 300 && res && res.ok) {
-          xhr = null;
-          progressText.textContent = 'Done! Opening your asset…';
-          window.location.href = res.url;
-          return;
+      try {
+        const ids = {};
+        const fields = Object.keys(blobs);
+        if (fields.length) {
+          const res = await api('/api/uploads', { files: fields.map((field) => ({ field, name: blobs[field].name, size: blobs[field].size })) });
+          tickets.push(...res.uploads);
+          await Promise.all(res.uploads.map((t) => send(t, blobs[t.field], (n) => { sent[t.field] = n; tick(); })));
+          res.uploads.forEach((t) => { ids[t.field] = t.id; });
         }
-        done();
-        if (res && res.errors) {
-          const messages = Object.entries(res.errors);
-          messages.forEach(([field]) => {
-            const el = form.querySelector(`[name="${field}"]`);
-            if (el) el.setAttribute('aria-invalid', 'true');
-          });
-          if (res.errors.file) dropzone.classList.add('has-error');
-          showError(messages.map(([, m]) => m).join(' '));
-        } else {
-          showError((res && res.error) || `Upload failed (${xhr.status}). Please try again.`);
-        }
-      });
-      xhr.addEventListener('error', () => { done(); showError('Network error — check your connection and try again.'); });
-      xhr.addEventListener('abort', () => { done(); showError('Upload cancelled.'); });
-      xhr.send(data);
+        progressText.textContent = 'Saving…';
+        const saved = await api(form.dataset.api, { ...details(), uploads: ids });
+        busy = false;
+        progressText.textContent = 'Done. Opening your asset…';
+        window.location.href = isEdit ? (saved.url || form.dataset.redirect) : `${saved.url}?uploaded=1`;
+      } catch (err) {
+        busy = false;
+        submitBtn.disabled = false;
+        progress.hidden = true;
+        if (cancelled || err.message === 'cancelled') { showError('Upload cancelled.'); return; }
+        if (err.errors) showFieldErrors(err.errors);
+        showError(err.message === 'network' ? 'Network error. Check your connection and try again.' : err.message);
+      }
     });
   }
 })();

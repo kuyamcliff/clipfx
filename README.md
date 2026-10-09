@@ -4,126 +4,122 @@
 
 Upload footage, transitions, overlays, LUTs, project templates, MOGRTs, sound effects, music, textures and 3D files, pick a clear license, and share one short link. Anyone can download, no account needed. No ads, no paywalls, no tracking.
 
+## How it fits together
+
+```
+                 pages, forms, /api/*                     JSON
+ Browser ───────────────────────────────▶  frontend/  ─────────────▶  backend/
+   │                                      (Vercel)                   (Render)
+   │                                                                  │  SQLite on a disk
+   │   upload & download with signed URLs                             │  signs R2 URLs
+   └──────────────────────────────────────▶  Cloudflare R2  ◀─────────┘  (thumbnails, hashing)
+```
+
+- **frontend/** runs on **Vercel**. It renders every page on the server, so share links unfurl with a thumbnail in Discord, X and iMessage. It handles HTML forms and forwards the browser's `/api/*` calls to the backend, so login cookies stay first-party on your domain.
+- **backend/** runs on **Render**. It's a JSON API for accounts, assets, permissions and moderation, with a SQLite database on a persistent disk.
+- **Cloudflare R2** stores every file. **Uploads and downloads go straight between the browser and R2.** File bytes never pass through Render or Vercel:
+  1. The browser tells the API what it wants to upload (name, size). The API checks type, size and quota and answers with signed R2 URLs. Files over 64 MB get one URL per part.
+  2. The browser uploads directly to R2: four parts at a time, each retried on failure, with live progress.
+  3. The API checks the object in R2 (it exists, has exactly the approved size, and previews really are images or videos), then saves the asset.
+  4. Downloads hit the API, which counts the download and redirects the browser to a short-lived signed R2 URL.
+- In the background the API hashes each file, so files removed for copyright stay blocked, and runs ffmpeg for thumbnails, waveforms and web previews. ffmpeg reads the file from R2 over a signed URL; nothing is copied to the server's disk.
+
 ## Features
 
-**Sharing**
-- Drag-and-drop uploads up to 2 GB (configurable) with a live progress bar, speed and ETA
-- A short share link for every asset (`/a/Xy7kQ2pD`), a copy button and a direct-download link
-- Public or **unlisted** (only people with the link) visibility
+- Drag-and-drop uploads up to 2 GB (configurable), with resumable parts, progress, speed and ETA
+- A short share link for every asset, a direct-download link, and a public or **unlisted** option
 - Upload a **new version** without breaking the link
-- Open Graph / Twitter tags so links unfurl with a thumbnail or video in Discord, X, Slack and iMessage
+- In-browser thumbnail frame picker; server-side previews for ProRes/MKV/AIFF and other formats browsers can't play
+- Full-text search, filters (category, software, file type, license, "commercial use OK", "no credit"), trending
+- Clear licenses (CC0, Free Use, CC BY, CC BY-SA, CC BY-NC), with a copy-ready credit line
+- Saves, creator profiles, a dashboard with download counts and storage use
+- Reports, a moderation queue, removal, file-hash blocking, bans, moderator roles and password reset links
+- scrypt passwords, CSRF protection, strict CSP, rate limiting, per-user quotas, and no executable uploads
 
-**Media**
-- Thumbnails are picked in the browser: scrub a slider to choose the video frame
-- Server-side processing with ffmpeg (when installed): metadata (resolution, duration), thumbnails, waveform images for audio, and lightweight web previews for formats browsers can't play (ProRes MOV, MKV, MXF, AIFF…)
-- Optional separate preview clip/image, useful for LUTs, presets and templates
-- Hover-to-play previews on cards, range-request streaming
-
-**Discovery**
-- Full-text search (SQLite FTS5) with prefix matching
-- Filters for category, software (AE, Premiere, Resolve, FCP, Blender…), file type, license, "commercial use OK" and "no credit required"
-- Sort by newest, trending (downloads over the last 14 days) or most downloaded
-- Tags, creator profiles, related assets, saved collections
-
-**Licensing**
-- CC0, a plain-English Free Use license, CC BY, CC BY-SA and CC BY-NC
-- Each asset page shows what you can and can't do, plus a copy-ready attribution credit
-
-**Trust & safety**
-- Reports (copyright, leaked paid assets, malware, etc.) and a moderation dashboard
-- Remove, restore or purge assets; block a file's SHA-256 so it can't be re-uploaded
-- Ban users (hides their uploads), promote moderators, generate password reset links
-- File-type allowlist (no executables/plugins), magic-byte checks on previews, downloads always served as attachments, sandboxed CSP on all media
-- scrypt password hashing, CSRF protection (double-submit token + Origin check), SameSite cookies, strict CSP, rate limiting, per-user storage quotas
-
-**Nonprofit pages**: About & mission, Donate, Community guidelines, Licenses explained, Terms, Privacy, Copyright/takedown policy.
-
-Everything works without JavaScript. JS adds drag-and-drop, progress, frame picking and other conveniences.
-
-## Quick start
+## Local development
 
 Requires **Node.js 22.13+**. ffmpeg is optional but recommended.
 
 ```bash
-npm install
-npm run seed     # optional: demo content (login: demo / demo-password)
-npm start        # http://localhost:3000
+npm run setup      # installs backend/ and frontend/
+npm run seed       # optional demo content (login: demo / demo-password)
+npm run dev        # website http://localhost:3000, API http://localhost:4000
+npm test           # backend + frontend tests
 ```
 
-The **first account** you create becomes the admin/moderator.
+Without R2 settings, the API stores files in `backend/data/uploads`. It uses the same signed-URL flow, so you're testing the real upload path. The first account you create becomes the admin.
 
-```bash
-npm test         # integration + unit tests
-npm run dev      # restart on file changes
-```
+To test against real R2 locally, put the `R2_*` variables from `backend/.env.example` in your environment before `npm run dev`.
 
 ## Deploying
 
-### Docker
+You'll set up three things: an R2 bucket, the API on Render and the website on Vercel. Pick one long random string to use as `INTERNAL_SECRET` in both Render and Vercel (for example, the output of `openssl rand -hex 32`).
 
-```bash
-docker build -t clipfx .
-docker run -d -p 3000:3000 -v clipfx-data:/data \
-  -e BASE_URL=https://clipfx.example.org -e TRUST_PROXY=1 \
-  -e DONATE_URL=https://opencollective.com/your-project clipfx
-```
+### 1. Cloudflare R2
 
-The image includes ffmpeg. All state (SQLite database + files) lives in `/data`, so **back up that volume**.
+1. In Cloudflare: **R2 → Create bucket**, e.g. `clipfx`. Keep it **private** (no public access needed).
+2. **R2 → Manage API tokens → Create API token** with *Object Read & Write* on that bucket. Note the Access Key ID, Secret Access Key and your Account ID.
+3. Allow browsers on your site to upload. Either run the script below (after deploying Vercel, so you know the URL):
+   ```bash
+   cd backend
+   R2_ACCOUNT_ID=... R2_ACCESS_KEY_ID=... R2_SECRET_ACCESS_KEY=... R2_BUCKET=clipfx \
+   CORS_ORIGINS=https://your-site.vercel.app npm run r2:cors
+   ```
+   or paste this into the bucket's **Settings → CORS policy**:
+   ```json
+   [{ "AllowedOrigins": ["https://your-site.vercel.app"], "AllowedMethods": ["GET", "HEAD", "PUT"],
+      "AllowedHeaders": ["content-type"], "ExposeHeaders": ["ETag"], "MaxAgeSeconds": 3600 }]
+   ```
+   `ExposeHeaders: ETag` is required for big files (multipart uploads).
+4. Recommended: add a lifecycle rule to **abort incomplete multipart uploads after 1 day**. The API also cleans up abandoned uploads hourly.
 
-### Behind a reverse proxy
+### 2. Render (API)
 
-Put it behind Caddy/nginx for HTTPS, set `TRUST_PROXY=1`, and allow large request bodies, e.g. nginx:
+1. **New → Blueprint**, pick this repo. Render reads `render.yaml` and creates `clipfx-api` (Docker, with ffmpeg) plus a 1 GB disk at `/data` for the database.
+2. Fill in the prompted values: `BASE_URL` (your Vercel URL; you can update it after step 3), `INTERNAL_SECRET`, `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`, and optionally `DONATE_URL` and `CONTACT_EMAIL`.
+3. After it deploys, open `https://<your-service>.onrender.com/healthz`. It should say `"storage":"r2"`.
 
-```nginx
-client_max_body_size 2300m;
-proxy_request_buffering off;
-proxy_read_timeout 3h;
-```
+A persistent disk needs a paid instance: the blueprint uses *Starter*. Free instances have no disk (the database would be wiped on every deploy) and sleep when idle.
 
-### Configuration
+### 3. Vercel (website)
 
-See [`.env.example`](.env.example). The important ones: `BASE_URL`, `DATA_DIR`, `TRUST_PROXY`, `DONATE_URL`, `CONTACT_EMAIL`, `MAX_UPLOAD_MB`, `USER_QUOTA_MB`, `ADMIN_USERNAMES`.
+1. **Add New → Project**, import this repo, and set **Root Directory** to `frontend`. Framework preset: *Other*. Leave the build settings empty; `frontend/vercel.json` handles them.
+2. Environment variables: `BACKEND_URL` = your Render URL (no trailing slash) and `INTERNAL_SECRET` = the same value as on Render. Add `PUBLIC_URL` if you use a custom domain.
+3. Deploy. Then set `BASE_URL` on Render to the final site address, and add the same address to the R2 CORS rule.
+
+Keep Vercel's function region close to Render's (the blueprint uses Render's *Virginia* region; Vercel's default is *iad1*, Washington D.C.).
+
+### Backups
+
+Everything except the files lives in one SQLite database on the Render disk (`/data/clipfx.db`). Render takes daily disk snapshots on paid plans; for extra safety, copy the file somewhere else periodically. Files in R2 are kept until an asset is deleted.
+
+## Configuration
+
+See `backend/.env.example` and `frontend/.env.example`. Notable settings: `MAX_UPLOAD_MB` (default 2048), `USER_QUOTA_MB` (default 25600), `MULTIPART_THRESHOLD_MB`, `ADMIN_USERNAMES`, `OPEN_SIGNUPS`, `MEDIA_PROCESSING`.
 
 ## Project layout
 
-The repo is split into two folders. One `package.json` at the root runs both.
-
 ```
-frontend/                what the browser sees
-  views/                 server-rendered HTML templates (layout, pages, components)
-  public/                static files served at /static: css/, js/, favicon
-
-backend/                 the server
-  src/
-    server.js            entry point
-    app.js               middleware, sessions, CSRF, wiring
-    config.js            environment settings
-    db.js, models.js     SQLite schema and queries
-    storage.js           files on disk
-    media.js             ffmpeg processing queue
-    security.js          passwords, cookies, headers, rate limits
-    catalog.js           categories, software, licenses, accepted file types
-    html.js              auto-escaping template helper used by the views
-    routes/              pages, auth, browse, assets, account, admin
-  scripts/seed.js        demo content
-  test/                  node:test suites
+frontend/                    Vercel project (Root Directory: frontend)
+  api/index.js               Vercel function entry
+  src/app.js                 page routes, form handling, /api proxy
+  src/backend.js             calls to the API + streaming proxy
+  src/html.js, decorate.js   templating and display helpers
+  views/                     HTML templates
+  public/static/             CSS, browser JS (incl. the direct-to-R2 uploader), favicon
+  vercel.json
+backend/                     Render service (Docker)
+  src/app.js                 API wiring, sessions, CSRF, cleanup
+  src/routes/                meta, auth, uploads, assets, users, admin, blob (local storage only)
+  src/storage/               r2.js (production) and local.js (development), one interface
+  src/media.js               hashing + ffmpeg jobs
+  src/models.js, db.js       SQLite schema and queries
+  scripts/                   seed.js, r2-cors.js
+  test/                      API tests (+ r2.test.js, opt-in against a real bucket)
+  Dockerfile
+render.yaml                  Render blueprint
+dev.js                       runs both apps locally
 ```
-
-- **Express 5**, server-rendered HTML through a small auto-escaping template helper
-- **SQLite** via Node's built-in `node:sqlite`, so no native modules to compile
-- Files on local disk under `DATA_DIR/uploads`, sharded by random key; original filenames are only used in `Content-Disposition`
-- Background media queue runs ffmpeg one job at a time and resumes after restarts
-
-## Scaling notes
-
-This runs as a single process, which is fine for a community site on one small VPS. When it outgrows that:
-- put a CDN in front of `/m/*` and `/a/*/download` (responses are cacheable and support range requests)
-- move uploads to S3-compatible object storage (swap `backend/src/storage.js`)
-- move rate limiting to Redis if you run several instances
-
-## Contributing
-
-Issues and PRs are welcome, especially for accessibility, translations and moderation tools. Please run `npm test` before opening a PR.
 
 ## License
 

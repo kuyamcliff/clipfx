@@ -1,5 +1,5 @@
 node_modules
 data
-backend/test
-.git
+test
 *.md
+.env
