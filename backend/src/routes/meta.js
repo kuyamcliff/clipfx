@@ -21,6 +21,7 @@ module.exports = function metaRoutes(app, ctx) {
       mediaProcessing: media.available,
       uploadsEnabled: config.uploadsEnabled,
       googleAuth: !!(config.google.clientId && config.google.clientSecret),
+      tiktokAuth: !!(config.tiktok.clientKey && config.tiktok.clientSecret),
     },
     catalog: {
       categories: catalog.CATEGORIES,
@@ -46,7 +47,7 @@ module.exports = function metaRoutes(app, ctx) {
 
   app.get('/api/session', async (req, res) => {
     res.ok({
-      user: ctx.publicUser(req.user, { self: true }),
+      user: req.user ? { ...ctx.publicUser(req.user, { self: true }), connections: await models.oauth.forUser(req.user.id) } : null,
       openReports: ctx.isAdmin(req) ? await models.reports.openCount() : 0,
     });
   });

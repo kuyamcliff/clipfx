@@ -71,6 +71,14 @@ function loadConfig(overrides = {}) {
       authUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
       tokenUrl: env.GOOGLE_TOKEN_URL || 'https://oauth2.googleapis.com/token',
     },
+    // TikTok Login Kit. Redirect URI registered with TikTok: BASE_URL + /auth/tiktok/callback.
+    tiktok: {
+      clientKey: env.TIKTOK_CLIENT_KEY || '',
+      clientSecret: env.TIKTOK_CLIENT_SECRET || '',
+      authUrl: 'https://www.tiktok.com/v2/auth/authorize/',
+      tokenUrl: 'https://open.tiktokapis.com/v2/oauth/token/',
+      userUrl: 'https://open.tiktokapis.com/v2/user/info/',
+    },
     cookieSecure: bool(env.COOKIE_SECURE, production),
     trustProxy: trustProxy(env.TRUST_PROXY),
     mediaProcessing: bool(env.MEDIA_PROCESSING, true),

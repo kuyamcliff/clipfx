@@ -171,6 +171,8 @@ function createModels(db, { storage }) {
       WHERE o.provider = ? AND o.subject = ?`, provider, String(subject)),
     link: (provider, subject, userId) => run('INSERT INTO oauth_accounts (provider, subject, user_id, created_at) VALUES (?, ?, ?, ?)',
       provider, String(subject), userId, Date.now()),
+    forUser: async (userId) => (await many('SELECT provider FROM oauth_accounts WHERE user_id = ? ORDER BY provider', userId)).map((r) => r.provider),
+    unlink: (provider, userId) => run('DELETE FROM oauth_accounts WHERE provider = ? AND user_id = ?', provider, userId),
   };
 
   const uploads = {

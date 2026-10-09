@@ -359,36 +359,48 @@ function createFrontend(config, { log = console } = {}) {
     return res.view(views.login, { values: { login: req.body.login }, error: r.data.error, next }, r.status);
   });
 
-  // Continue with Google: the API builds the sign-in URL and exchanges the code; this side keeps
-  // the state and PKCE verifier in a short-lived cookie and checks them when Google sends the visitor back.
-  const OAUTH_COOKIE = 'g_oauth';
-  app.get('/auth/google', async (req, res) => {
-    const r = await req.api('GET', '/api/auth/google/start');
+  // Sign in with Google or TikTok. The API builds the provider URL and exchanges the code; this side
+  // keeps state + verifier in a short-lived cookie and checks them when the visitor comes back.
+  const OAUTH_COOKIE = 'oauth';
+  const PROVIDERS = { google: 'Google', tiktok: 'TikTok' };
+  const knownProvider = (req, res, next) => (Object.hasOwn(PROVIDERS, req.params.provider) ? next() : next('route'));
+
+  app.get('/auth/:provider', knownProvider, async (req, res) => {
+    const name = req.params.provider;
+    const r = await req.api('GET', `/api/auth/${name}/start`);
     if (r.status !== 200) {
-      res.flash('error', r.data.error || 'Google sign-in isn’t available right now.');
+      res.flash('error', r.data.error || `${PROVIDERS[name]} sign-in isn’t available right now.`);
       return res.redirect('/login');
     }
-    const value = Buffer.from(JSON.stringify({ state: r.data.state, verifier: r.data.verifier, next: safeNext(req.query.next) })).toString('base64url');
+    const value = Buffer.from(JSON.stringify({ provider: name, state: r.data.state, verifier: r.data.verifier, next: safeNext(req.query.next) })).toString('base64url');
     res.cookie(OAUTH_COOKIE, value, { ...cookieBase, maxAge: 10 * 60 * 1000 });
     res.setHeader('Cache-Control', 'no-store');
     return res.redirect(r.data.url);
   });
 
-  app.get('/auth/google/callback', async (req, res) => {
+  app.get('/auth/:provider/callback', knownProvider, async (req, res) => {
+    const name = req.params.provider;
+    const label = PROVIDERS[name];
     let saved = null;
     try { saved = JSON.parse(Buffer.from(req.cookies[OAUTH_COOKIE] || '', 'base64url').toString()); } catch { saved = null; }
     res.clearCookie(OAUTH_COOKIE, cookieBase);
-    const back = (message) => { res.flash('error', message); return res.redirect('/login'); };
-    if (req.query.error) return back(req.query.error === 'access_denied' ? 'Google sign-in was cancelled.' : 'Google sign-in didn’t work. Please try again.');
-    if (!saved || !safeEqual(req.query.state, saved.state) || !req.query.code) return back('Google sign-in expired. Please try again.');
-    const r = await req.api('POST', '/api/auth/google', { code: String(req.query.code), verifier: saved.verifier });
+    const ctx = await req.context();
+    const back = (message) => { res.flash('error', message); return res.redirect(ctx.user ? '/settings#connections' : '/login'); };
+    if (req.query.error) return back(req.query.error === 'access_denied' ? `${label} sign-in was cancelled.` : `${label} sign-in didn’t work. Please try again.`);
+    if (!saved || saved.provider !== name || !safeEqual(req.query.state, saved.state) || !req.query.code) return back(`${label} sign-in expired. Please try again.`);
+    const r = await req.api('POST', `/api/auth/${name}`, { code: String(req.query.code), verifier: saved.verifier });
     if (r.status === 200 || r.status === 201) {
       res.flash('success', r.data.message);
+      if (r.data.linked) return res.redirect('/settings#connections');
       return res.redirect(safeNext(saved.next) || (r.data.created ? '/settings' : '/'));
     }
     if (r.status >= 500 || r.status === 429) return res.apiError(r);
-    return back(r.data.error || 'Google sign-in didn’t work. Please try again.');
+    return back(r.data.error || `${label} sign-in didn’t work. Please try again.`);
   });
+
+  app.post('/settings/connections/:provider/remove', requireUser, knownProvider, formAction({
+    api: (req) => `/api/me/connections/${encodeURIComponent(req.params.provider)}/remove`, body: () => ({}), redirect: '/settings#connections',
+  }));
 
   app.post('/logout', formAction({ api: '/api/auth/logout', body: () => ({}), redirect: '/' }));
 
