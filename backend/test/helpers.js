@@ -2,12 +2,16 @@
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const crypto = require('node:crypto');
 const { loadConfig } = require('../src/config');
 const { createApp } = require('../src/app');
 
 async function startServer(overrides = {}) {
-  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'clipfx-test-'));
-  const config = loadConfig({ dataDir, rateLimits: false, logRequests: false, mediaProcessing: false, cookieSecure: false, ...overrides });
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'clipfx-api-test-'));
+  const config = loadConfig({
+    dataDir, rateLimits: false, logRequests: false, mediaProcessing: false, cookieSecure: false,
+    storage: 'local', baseUrl: 'http://frontend.test', internalSecret: 'test-secret', ...overrides,
+  });
   const silent = { log() {}, warn() {}, error() {} };
   const instance = createApp(config, { log: overrides.verbose ? console : silent });
   const server = await new Promise((resolve) => { const s = instance.app.listen(0, '127.0.0.1', () => resolve(s)); });
@@ -23,19 +27,16 @@ async function startServer(overrides = {}) {
   };
 }
 
+// A browser-like client: keeps cookies and sends the double-submit CSRF token, like the frontend does.
 function client(base) {
-  const jar = new Map();
-  async function request(method, p, { form, body, headers = {} } = {}) {
+  const jar = new Map([['csrf', crypto.randomBytes(16).toString('hex')]]);
+  async function request(method, p, { json, body, headers = {}, csrf = true } = {}) {
     const h = { ...headers };
-    if (jar.size) h.cookie = [...jar].map(([k, v]) => `${k}=${v}`).join('; ');
+    h.cookie = [...jar].map(([k, v]) => `${k}=${v}`).join('; ');
+    if (csrf) h['x-csrf-token'] = jar.get('csrf');
     let payload = body;
-    if (form) {
-      const params = new URLSearchParams();
-      for (const [k, v] of Object.entries(form)) [].concat(v).forEach((x) => params.append(k, x));
-      if (!('_csrf' in form) && jar.has('csrf')) params.append('_csrf', decodeURIComponent(jar.get('csrf')));
-      payload = params;
-    }
-    const res = await fetch(base + p, { method, headers: h, body: payload, redirect: 'manual' });
+    if (json !== undefined) { h['content-type'] = 'application/json'; payload = JSON.stringify(json); }
+    const res = await fetch(p.startsWith('http') ? p : base + p, { method, headers: h, body: payload, redirect: 'manual' });
     for (const c of res.headers.getSetCookie()) {
       const [kv] = c.split(';');
       const i = kv.indexOf('=');
@@ -44,39 +45,62 @@ function client(base) {
       if (!v || /Expires=Thu, 01 Jan 1970/i.test(c)) jar.delete(k); else jar.set(k, v);
     }
     res.body_ = Buffer.from(await res.arrayBuffer());
-    res.text_ = res.body_.toString();
+    try { res.json_ = JSON.parse(res.body_.toString()); } catch { res.json_ = null; }
     return res;
   }
+
   const c = {
     jar,
     get: (p, o) => request('GET', p, o),
-    post: (p, o) => request('POST', p, o),
-    csrf: () => decodeURIComponent(jar.get('csrf') || ''),
+    post: (p, json = {}, o = {}) => request('POST', p, { json, ...o }),
+    put: (p, o) => request('PUT', p, o),
     async signup(username, password = 'correct horse battery') {
-      await c.get('/signup');
-      return c.post('/signup', { form: { username, password, agree: 'on' } });
+      return c.post('/api/auth/signup', { username, password, agree: true });
     },
     async login(login, password = 'correct horse battery') {
-      await c.get('/login');
-      return c.post('/login', { form: { login, password } });
+      return c.post('/api/auth/login', { login, password });
     },
-    async upload(fields, files, { json = true, csrf = true, url = '/upload' } = {}) {
-      if (!jar.has('csrf')) await c.get('/');
-      const fd = new FormData();
-      for (const [k, v] of Object.entries(fields)) [].concat(v).forEach((x) => fd.append(k, x));
-      for (const [k, f] of Object.entries(files)) fd.append(k, new Blob([f.data]), f.name);
-      const headers = {};
-      if (json) headers.accept = 'application/json';
-      if (csrf) headers['x-csrf-token'] = c.csrf();
-      return request('POST', url, { body: fd, headers });
+    // Does what the browser does: ask for tickets, PUT to storage, complete multipart uploads.
+    async uploadFiles(files) {
+      const list = Object.entries(files).map(([field, f]) => ({ field, name: f.name, size: f.data.length }));
+      const res = await c.post('/api/uploads', { files: list });
+      if (res.status !== 201) return { res };
+      const ids = {};
+      for (const t of res.json_.uploads) {
+        const data = files[t.field].data;
+        if (t.method === 'put') {
+          const r = await fetch(base + t.url, { method: 'PUT', headers: t.headers, body: data });
+          if (r.status !== 200) throw new Error(`PUT failed ${r.status} ${await r.text()}`);
+        } else {
+          const parts = [];
+          for (const p of t.parts) {
+            const start = (p.number - 1) * t.partSize;
+            const r = await fetch(base + p.url, { method: 'PUT', body: data.subarray(start, start + p.size) });
+            if (r.status !== 200) throw new Error(`part ${p.number} failed ${r.status}`);
+            parts.push({ number: p.number, etag: r.headers.get('etag') });
+          }
+          const done = await c.post(`/api/uploads/${t.id}/complete`, { parts });
+          if (done.status !== 200) throw new Error(`complete failed ${done.status} ${done.body_}`);
+        }
+        ids[t.field] = t.id;
+      }
+      return { res, ids, tickets: res.json_.uploads };
+    },
+    async createAsset(fields, files) {
+      const up = await c.uploadFiles(files);
+      if (!up.ids) return up.res;
+      return c.post('/api/assets', { ...fields, uploads: up.ids });
     },
   };
   return c;
 }
 
 const baseFields = (extra = {}) => ({
-  title: 'Organic Light Leaks', category: 'overlays', license: 'cc0', visibility: 'public', rights: 'on',
+  title: 'Organic Light Leaks', category: 'overlays', license: 'cc0', visibility: 'public', rights: true,
   tags: 'light leak, film, warm', software: ['ae', 'pr'], description: 'Twelve light leaks.', ...extra,
 });
 
-module.exports = { startServer, client, baseFields };
+const fakeVideo = { name: 'leaks.mp4', data: Buffer.concat([Buffer.from([0, 0, 0, 0x18]), Buffer.from('ftypmp42'), Buffer.alloc(2048, 7)]) };
+const png = Buffer.from('89504e470d0a1a0a0000000d4948445200000001000000010806000000', 'hex');
+
+module.exports = { startServer, client, baseFields, fakeVideo, png };

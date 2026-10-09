@@ -1,7 +1,6 @@
 'use strict';
-const { html, formatCount, formatBytes } = require('../../backend/src/html');
+const { html, formatCount, formatBytes } = require('../src/html');
 const { layout } = require('./layout');
-const { LICENSES, FILE_TYPES, KINDS } = require('../../backend/src/catalog');
 
 const contact = (config) => (config.contactEmail
   ? html`<a href="mailto:${config.contactEmail}">${config.contactEmail}</a>`
@@ -25,7 +24,7 @@ const PAGES = {
   guidelines: {
     title: 'Guidelines',
     lead: () => 'What you can upload, and what gets removed.',
-    body: (c) => html`
+    body: (c, stats, cat) => html`
       <h2>Only share what you have the right to share</h2>
       <ul>
         <li><strong>Your own work</strong>, or work whose license allows redistribution (CC0, for example). Say where it came from in the description.</li>
@@ -45,7 +44,7 @@ const PAGES = {
       <p>A clear title, the right category and a few tags go a long way. For LUTs, templates and presets, add a preview so people can see the result. Put the frame rate, codec, software version and any required plugins in the description. If it’s a ZIP, include a short README.</p>
       <h2 id="formats">Accepted formats</h2>
       <table class="format-table"><tbody>
-        ${Object.entries(KINDS).map(([kind, k]) => html`<tr><th scope="row">${k.name}</th><td>${Object.entries(FILE_TYPES).filter(([, t]) => t.kind === kind).map(([ext]) => `.${ext}`).join(' ')}</td></tr>`)}
+        ${Object.entries(cat.kinds).map(([kind, k]) => html`<tr><th scope="row">${k.name}</th><td>${Object.entries(cat.fileTypes).filter(([, t]) => t === kind).map(([ext]) => `.${ext}`).join(' ')}</td></tr>`)}
       </tbody></table>
       <h2>Enforcement</h2>
       <p>Anyone can report an asset. Moderators can remove it, block the same file from being uploaded again, or suspend the account. Repeated copyright problems mean a permanent ban. Questions go to ${contact(c)}.</p>`,
@@ -54,12 +53,12 @@ const PAGES = {
   licenses: {
     title: 'Licenses',
     lead: () => 'Every upload uses one of these. This is a summary; the full license text is what counts.',
-    body: () => {
+    body: (c, stats, cat) => {
       const yn = (v) => html`<td class="${v ? 'y' : 'n'}">${v ? 'yes' : 'no'}</td>`;
       return html`
       <div class="compare-wrap"><table class="compare">
         <thead><tr><th scope="col">License</th><th scope="col">Commercial use</th><th scope="col">Credit needed</th><th scope="col">Other conditions</th></tr></thead>
-        <tbody>${LICENSES.map((l) => html`<tr>
+        <tbody>${cat.licenses.map((l) => html`<tr>
           <td><strong>${l.short}</strong><br><span class="small muted">${l.url.startsWith('http') ? html`<a href="${l.url}" target="_blank" rel="noopener">${l.name}</a>` : l.name}</span></td>
           ${yn(l.commercial)}
           <td class="${l.attribution ? 'n' : 'y'}">${l.attribution ? 'yes' : 'no'}</td>
@@ -165,7 +164,7 @@ function staticPage(ctx, { page, stats }) {
       <h1>${p.title}</h1>
       <p class="lead">${p.lead(ctx.config)}</p>
     </header>
-    <article class="prose static">${p.body(ctx.config, stats)}</article>
+    <article class="prose static">${p.body(ctx.config, stats, ctx.catalog)}</article>
   </div>`;
   return layout(ctx, { title: p.title, description: p.lead(ctx.config), body, og: { url: ctx.absolute(`/${page}`) } });
 }

@@ -19,29 +19,28 @@ test('ffmpeg generates thumbnails, metadata and web previews', { skip: !hasFfmpe
 
     const c = client(srv.base);
     await c.signup('editor');
-    let res = await c.upload(baseFields({ category: 'footage' }), { file: { name: 'clip.mkv', data: fs.readFileSync(mkv) } });
-    assert.equal(res.status, 201, res.text_);
-    const videoSlug = JSON.parse(res.text_).url.split('/').pop();
-    res = await c.upload(baseFields({ category: 'sfx', title: 'Sine Hit' }), { file: { name: 'hit.wav', data: fs.readFileSync(wav) } });
-    const audioSlug = JSON.parse(res.text_).url.split('/').pop();
+    let res = await c.createAsset(baseFields({ category: 'footage' }), { file: { name: 'clip.mkv', data: fs.readFileSync(mkv) } });
+    assert.equal(res.status, 201, res.body_.toString());
+    const videoSlug = res.json_.slug;
+    res = await c.createAsset(baseFields({ category: 'sfx', title: 'Sine Hit' }), { file: { name: 'hit.wav', data: fs.readFileSync(wav) } });
+    const audioSlug = res.json_.slug;
 
     await srv.media.idle();
-    const v = srv.models.assets.bySlug(videoSlug);
-    assert.equal(v.media_status, 'done');
+    const v = (await c.get(`/api/assets/${videoSlug}`)).json_.asset;
+    assert.equal(v.processing, false);
     assert.equal(v.width, 1280);
     assert.equal(v.height, 720);
     assert.ok(Math.abs(v.duration - 2) < 0.2);
-    assert.ok(v.thumb_key, 'thumbnail generated');
-    assert.equal(v.preview_ext, 'mp4', 'mkv gets a web preview');
-    assert.equal(v.resolution, '720p');
+    assert.ok(v.thumbUrl, 'thumbnail generated');
+    assert.ok(v.videoSrc && v.videoSrc.includes('/p/'), 'mkv gets a web preview');
 
-    const thumb = await c.get(`/m/${videoSlug}/thumb`);
+    const thumb = await c.get(v.thumbUrl);
     assert.equal(thumb.headers.get('content-type'), 'image/jpeg');
-    const preview = await c.get(`/m/${videoSlug}/preview`);
+    const preview = await c.get(v.videoSrc);
     assert.equal(preview.headers.get('content-type'), 'video/mp4');
 
-    const a = srv.models.assets.bySlug(audioSlug);
-    assert.ok(a.thumb_key, 'waveform generated');
+    const a = (await c.get(`/api/assets/${audioSlug}`)).json_.asset;
+    assert.ok(a.thumbUrl, 'waveform generated');
     assert.ok(Math.abs(a.duration - 1) < 0.2);
   } finally {
     await srv.stop();

@@ -1,9 +1,10 @@
 'use strict';
-const { html, formatCount, formatBytes, timeAgo, formatDate } = require('../../backend/src/html');
+const { html, formatCount, formatBytes, timeAgo, formatDate } = require('../src/html');
 const { layout } = require('./layout');
 const { avatar, csrfField, emptyState, pagination } = require('./components');
 
 function admin(ctx, { tab, q, stats, openReports, reports, result, users, reasons }) {
+  const backUrl = `/admin?tab=${tab}${q ? `&q=${encodeURIComponent(q)}` : ''}`;
   const tabs = [['reports', `Reports${openReports ? ` (${openReports})` : ''}`], ['assets', 'All assets'], ['removed', 'Removed'], ['users', 'Users']];
   let content;
 
@@ -17,12 +18,12 @@ function admin(ctx, { tab, q, stats, openReports, reports, result, users, reason
       </div>
       ${r.details ? html`<blockquote>${r.details}</blockquote>` : ''}
       <div class="btn-row">
-        <form method="post" action="/admin/reports/${r.id}/remove" class="inline-form" data-confirm="Remove this asset from the site?">${csrfField(ctx)}
+        <form method="post" action="/admin/reports/${r.id}/remove" class="inline-form" data-confirm="Remove this asset from the site?">${csrfField(ctx)}<input type="hidden" name="back" value="${backUrl}">
           <input type="hidden" name="reason" value="${reasons[r.reason] || r.reason}">
           <label class="check small"><input type="checkbox" name="block" ${['copyright', 'stolen', 'malware'].includes(r.reason) ? 'checked' : ''}> Block re-uploads</label>
           <button class="btn btn-danger btn-sm" type="submit">Remove asset</button>
         </form>
-        <form method="post" action="/admin/reports/${r.id}/dismiss">${csrfField(ctx)}<button class="btn btn-ghost btn-sm" type="submit">Dismiss</button></form>
+        <form method="post" action="/admin/reports/${r.id}/dismiss">${csrfField(ctx)}<input type="hidden" name="back" value="${backUrl}"><button class="btn btn-ghost btn-sm" type="submit">Dismiss</button></form>
       </div>
     </article>`)}</div>` : emptyState(null, 'No open reports', 'New reports show up here.');
   } else if (tab === 'assets' || tab === 'removed') {
@@ -37,9 +38,9 @@ function admin(ctx, { tab, q, stats, openReports, reports, result, users, reason
           <td class="num">${formatCount(a.downloads)}</td>
           <td>${timeAgo(a.created_at)}</td>
           <td class="actions">${tab === 'assets'
-    ? html`<form method="post" action="/admin/assets/${a.id}/remove" data-confirm="Remove “${a.title}”?">${csrfField(ctx)}<input type="hidden" name="reason" value="Guidelines violation"><button class="btn btn-danger-ghost btn-sm">Remove</button></form>`
-    : html`<form method="post" action="/admin/assets/${a.id}/restore">${csrfField(ctx)}<button class="btn btn-ghost btn-sm">Restore</button></form>
-              <form method="post" action="/admin/assets/${a.id}/purge" data-confirm="Permanently delete the files? This can’t be undone.">${csrfField(ctx)}<button class="btn btn-danger-ghost btn-sm">Delete files</button></form>`}</td>
+    ? html`<form method="post" action="/admin/assets/${a.id}/remove" data-confirm="Remove “${a.title}”?">${csrfField(ctx)}<input type="hidden" name="back" value="${backUrl}"><input type="hidden" name="reason" value="Guidelines violation"><button class="btn btn-danger-ghost btn-sm">Remove</button></form>`
+    : html`<form method="post" action="/admin/assets/${a.id}/restore">${csrfField(ctx)}<input type="hidden" name="back" value="${backUrl}"><button class="btn btn-ghost btn-sm">Restore</button></form>
+              <form method="post" action="/admin/assets/${a.id}/purge" data-confirm="Permanently delete the files? This can’t be undone.">${csrfField(ctx)}<input type="hidden" name="back" value="${backUrl}"><button class="btn btn-danger-ghost btn-sm">Delete files</button></form>`}</td>
         </tr>`)}</tbody></table></div>` : emptyState('box', 'Nothing here', tab === 'removed' ? 'No assets have been removed.' : 'No assets match.')}
       ${pagination(result, '/admin', { tab, q })}`;
   } else {
@@ -53,9 +54,9 @@ function admin(ctx, { tab, q, stats, openReports, reports, result, users, reason
           <td class="num">${u.asset_count}</td>
           <td>${formatDate(u.created_at)}</td>
           <td class="actions">${u.id === ctx.user.id ? html`<span class="muted small">You</span>` : html`
-            <form method="post" action="/admin/users/${u.id}/ban" data-confirm="${u.banned ? 'Unban' : 'Ban'} @${u.username}?">${csrfField(ctx)}<button class="btn ${u.banned ? 'btn-ghost' : 'btn-danger-ghost'} btn-sm">${u.banned ? 'Unban' : 'Ban'}</button></form>
-            <form method="post" action="/admin/users/${u.id}/role" data-confirm="Change @${u.username}’s role?">${csrfField(ctx)}<button class="btn btn-ghost btn-sm">${u.role === 'admin' ? 'Remove mod' : 'Make mod'}</button></form>
-            <form method="post" action="/admin/users/${u.id}/reset">${csrfField(ctx)}<button class="btn btn-ghost btn-sm">Reset link</button></form>`}</td>
+            <form method="post" action="/admin/users/${u.id}/ban" data-confirm="${u.banned ? 'Unban' : 'Ban'} @${u.username}?">${csrfField(ctx)}<input type="hidden" name="back" value="${backUrl}"><button class="btn ${u.banned ? 'btn-ghost' : 'btn-danger-ghost'} btn-sm">${u.banned ? 'Unban' : 'Ban'}</button></form>
+            <form method="post" action="/admin/users/${u.id}/role" data-confirm="Change @${u.username}’s role?">${csrfField(ctx)}<input type="hidden" name="back" value="${backUrl}"><button class="btn btn-ghost btn-sm">${u.role === 'admin' ? 'Remove mod' : 'Make mod'}</button></form>
+            <form method="post" action="/admin/users/${u.id}/reset">${csrfField(ctx)}<input type="hidden" name="back" value="${backUrl}"><button class="btn btn-ghost btn-sm">Reset link</button></form>`}</td>
         </tr>`)}</tbody></table></div>`;
   }
 

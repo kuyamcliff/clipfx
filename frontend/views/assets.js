@@ -1,8 +1,7 @@
 'use strict';
-const { html, raw, richText, formatBytes, formatCount, formatDate } = require('../../backend/src/html');
+const { html, raw, richText, formatBytes, formatCount, formatDate } = require('../src/html');
 const { layout } = require('./layout');
 const { csrfField, assetGrid, fieldError, invalid, meter } = require('./components');
-const { CATEGORIES, SOFTWARE, LICENSES, FILE_TYPES, KIND_CATEGORY, PREVIEW_EXTS } = require('../../backend/src/catalog');
 
 // ---- Asset page ------------------------------------------------------------------
 
@@ -31,7 +30,7 @@ function licenseTerms(l) {
   </ul>`;
 }
 
-function asset(ctx, { asset: a, more, related, saved, shareUrl }) {
+function asset(ctx, { asset: a, more, related, saved, shareUrl, justUploaded }) {
   const { user } = ctx;
   const credit = `“${a.title}” by ${a.display_name} (${shareUrl}), licensed under ${a.license.short}`;
   const details = [
@@ -51,6 +50,7 @@ function asset(ctx, { asset: a, more, related, saved, shareUrl }) {
   const body = html`
   <div class="container asset-page">
     ${a.status !== 'active' ? html`<div class="notice notice-danger"><strong>Removed by moderators</strong> (${a.removed_reason || 'guidelines'}). Only you${user && user.role === 'admin' ? ' and moderators' : ''} can see this page.</div>` : ''}
+    ${justUploaded ? html`<div class="notice notice-rec"><strong>Uploaded.</strong> ${a.visibility === 'unlisted' ? 'It’s unlisted, so only people with the link can find it.' : 'It’s live.'} Copy the link on the right to share it.</div>` : ''}
     ${a.visibility === 'unlisted' && a.canEdit ? html`<div class="notice"><strong>Unlisted.</strong> Not shown in search or on your profile. Anyone with the link can download it.</div>` : ''}
     ${a.processing ? html`<div class="notice">Making the thumbnail and preview. Refresh in a minute.</div>` : ''}
 
@@ -80,7 +80,7 @@ function asset(ctx, { asset: a, more, related, saved, shareUrl }) {
             <button type="button" data-copy="${ctx.absolute(a.downloadUrl)}" title="Starts the download straight away"><span>Copy direct download link</span></button>
             <button type="button" data-share data-share-title="${a.title}" data-share-url="${shareUrl}" hidden>Share…</button>
           </div>
-          ${user ? html`<form method="post" action="${a.url}/save" data-save-form>${csrfField(ctx)}
+          ${user ? html`<form method="post" action="${a.url}/save" data-save-form data-api="/api/assets/${a.slug}/save">${csrfField(ctx)}
               <button type="submit" class="btn btn-block ${saved ? 'is-saved' : ''}" aria-pressed="${saved ? 'true' : 'false'}" data-save-btn><span>${saved ? 'Saved' : 'Save'}</span></button></form>`
     : html`<a class="btn btn-block" href="/login?next=${encodeURIComponent(a.url)}">Save</a>`}
         </div>
@@ -154,7 +154,7 @@ function removed(ctx, { asset: a }) {
 
 // ---- Upload & edit forms ------------------------------------------------------------
 
-function detailFields(values, errors) {
+function detailFields(catalog, values, errors) {
   const sw = new Set(values.software || []);
   return html`
     <div class="field">
@@ -166,14 +166,14 @@ function detailFields(values, errors) {
       <label for="category">Category</label>
       <select id="category" name="category" required${invalid(errors, 'category')}>
         <option value="">Choose a category…</option>
-        ${CATEGORIES.map((c) => html`<option value="${c.id}" ${values.category === c.id ? 'selected' : ''}>${c.name}</option>`)}
+        ${catalog.categories.map((c) => html`<option value="${c.id}" ${values.category === c.id ? 'selected' : ''}>${c.name}</option>`)}
       </select>
       ${fieldError(errors, 'category')}
     </div>
     <fieldset class="field">
       <legend>Works with</legend>
       <div class="chip-select">
-        ${SOFTWARE.map((s) => html`<label class="chip-option"><input type="checkbox" name="software" value="${s.id}" ${sw.has(s.id) ? 'checked' : ''}><span>${s.name}</span></label>`)}
+        ${catalog.software.map((s) => html`<label class="chip-option"><input type="checkbox" name="software" value="${s.id}" ${sw.has(s.id) ? 'checked' : ''}><span>${s.name}</span></label>`)}
       </div>
     </fieldset>
     <div class="field">
@@ -187,12 +187,12 @@ function detailFields(values, errors) {
     </div>`;
 }
 
-function licenseFields(values, errors) {
+function licenseFields(catalog, values, errors) {
   return html`
     <fieldset class="field">
       <legend>License <a class="link-muted small" href="/licenses" target="_blank">compare</a></legend>
       <div class="option-list">
-        ${LICENSES.map((l) => html`<label class="option">
+        ${catalog.licenses.map((l) => html`<label class="option">
           <input type="radio" name="license" value="${l.id}" ${values.license === l.id ? 'checked' : ''} required>
           <span class="option-body"><strong>${l.short}</strong><span>${l.summary}</span></span>
         </label>`)}
@@ -210,7 +210,7 @@ function licenseFields(values, errors) {
     </fieldset>`;
 }
 
-function mediaFields(limits, opts = {}) {
+function mediaFields(catalog, limits, opts = {}) {
   return html`
     <div class="thumb-picker">
       <div class="thumb-frame" data-thumb-frame>
@@ -233,7 +233,7 @@ function mediaFields(limits, opts = {}) {
     </div>
     <div class="field">
       <label for="preview">Preview clip or image <span class="muted">optional, up to ${formatBytes(limits.maxPreview)}</span></label>
-      <input type="file" id="preview" name="preview" accept="${PREVIEW_EXTS.map((e) => `.${e}`).join(',')}">
+      <input type="file" id="preview" name="preview" accept="${catalog.previewExts.map((e) => `.${e}`).join(',')}">
       ${fieldError(opts.errors, 'preview')}
       <p class="hint">Worth adding for LUTs, presets and templates, so people can see the result before downloading.</p>
     </div>
@@ -242,7 +242,7 @@ function mediaFields(limits, opts = {}) {
     <input type="hidden" name="duration" data-meta="duration">`;
 }
 
-const allowedJson = () => JSON.stringify(Object.fromEntries(Object.entries(FILE_TYPES).map(([k, v]) => [k, v.kind])));
+const allowedJson = (catalog) => JSON.stringify(catalog.fileTypes);
 
 function dropzone(limits, errors, { required, compact } = {}) {
   return html`
@@ -277,9 +277,10 @@ function upload(ctx, { values, errors, limits }) {
       <p>Anything you upload is free for others to download under the license you pick.</p>
     </header>
     ${Object.keys(errors).length ? html`<div class="notice notice-danger" role="alert"><strong>Check the fields below.</strong>${errors.file ? '' : ' You’ll need to choose your file again.'}</div>` : ''}
-    <form id="upload-form" class="upload-layout" method="post" action="/upload" enctype="multipart/form-data"
-      data-upload-form data-mode="create" data-allowed="${allowedJson()}" data-kind-category="${JSON.stringify(KIND_CATEGORY)}"
-      data-max="${limits.maxUpload}" data-remaining="${remaining}" data-csrf="${ctx.csrf}">
+    <noscript><div class="notice notice-danger">Uploading needs JavaScript: files go straight from your browser to storage.</div></noscript>
+    <form id="upload-form" class="upload-layout" method="post" action="/upload"
+      data-upload-form data-mode="create" data-allowed="${allowedJson(ctx.catalog)}" data-kind-category="${JSON.stringify(ctx.catalog.kindCategory)}"
+      data-max="${limits.maxUpload}" data-max-preview="${limits.maxPreview}" data-remaining="${remaining}" data-csrf="${ctx.csrf}" data-api="/api/assets">
       ${csrfField(ctx)}
       <div class="upload-main">
         <section class="panel">
@@ -289,16 +290,16 @@ function upload(ctx, { values, errors, limits }) {
         </section>
         <section class="panel">
           <h2 class="panel-title"><span class="num">02</span>Thumbnail and preview</h2>
-          ${mediaFields(limits, { errors })}
+          ${mediaFields(ctx.catalog, limits, { errors })}
         </section>
         <section class="panel">
           <h2 class="panel-title"><span class="num">03</span>Details</h2>
-          ${detailFields(values, errors)}
+          ${detailFields(ctx.catalog, values, errors)}
         </section>
       </div>
       <aside class="upload-side">
         <section class="panel sticky">
-          ${licenseFields(values, errors)}
+          ${licenseFields(ctx.catalog, values, errors)}
           <label class="check ${errors.rights ? 'has-error' : ''}">
             <input type="checkbox" name="rights" required ${values.rights ? 'checked' : ''}>
             <span>I made this or have the right to share it, and it isn’t a paid or leaked asset.</span>
@@ -321,35 +322,37 @@ function editAsset(ctx, { asset: a, values, errors, limits }) {
       <a class="back" href="${a.url}">← ${a.title}</a>
       <h1>Edit</h1>
     </header>
-    <form id="upload-form" class="upload-layout" method="post" action="${a.url}/edit" enctype="multipart/form-data"
-      data-upload-form data-mode="edit" data-allowed="${allowedJson()}" data-kind-category="{}" data-max="${limits.maxUpload}" data-csrf="${ctx.csrf}">
+    <form id="upload-form" class="upload-layout" method="post" action="${a.url}/edit"
+      data-upload-form data-mode="edit" data-allowed="${allowedJson(ctx.catalog)}" data-kind-category="{}" data-max="${limits.maxUpload}"
+      data-max-preview="${limits.maxPreview}" data-csrf="${ctx.csrf}" data-api="/api/assets/${a.slug}/edit" data-redirect="${a.url}">
       ${csrfField(ctx)}
       <div class="upload-main">
         <section class="panel">
           <h2 class="panel-title">Details</h2>
-          ${detailFields(values, errors)}
+          ${detailFields(ctx.catalog, values, errors)}
         </section>
         <section class="panel">
           <h2 class="panel-title">Thumbnail and preview</h2>
-          ${mediaFields(limits, { errors, currentThumb: a.thumbUrl, thumbNote: 'Choose an image to replace the current thumbnail.' })}
+          ${mediaFields(ctx.catalog, limits, { errors, currentThumb: a.thumbUrl, thumbNote: 'Choose an image to replace the current thumbnail.' })}
           <div class="stack-sm">
-            ${a.thumb_key ? html`<label class="check"><input type="checkbox" name="remove_thumb"> Remove current thumbnail${a.kind === 'video' ? ' (a new one is made from the video)' : ''}</label>` : ''}
-            ${a.preview_key ? html`<label class="check"><input type="checkbox" name="remove_preview"> Remove current preview</label>` : ''}
+            ${a.has_thumb ? html`<label class="check"><input type="checkbox" name="removeThumb"> Remove current thumbnail${a.kind === 'video' ? ' (a new one is made from the video)' : ''}</label>` : ''}
+            ${a.has_preview ? html`<label class="check"><input type="checkbox" name="removePreview"> Remove current preview</label>` : ''}
           </div>
         </section>
         <section class="panel">
           <h2 class="panel-title">Replace file</h2>
           <p class="small muted">The page and share link stay the same. Current file: <span class="mono">${a.file_name}</span> (${a.sizeLabel})</p>
+          <noscript><p class="notice">Replacing files needs JavaScript. You can still change the details without it.</p></noscript>
           ${dropzone(limits, errors, { compact: true })}
-          ${a.thumb_key || a.preview_key ? html`<div class="stack-sm">
-            ${a.thumb_key ? html`<label class="check"><input type="checkbox" name="keep_thumb"> Keep the current thumbnail</label>` : ''}
-            ${a.preview_key ? html`<label class="check"><input type="checkbox" name="keep_preview"> Keep the current preview</label>` : ''}
+          ${a.has_thumb || a.has_preview ? html`<div class="stack-sm">
+            ${a.has_thumb ? html`<label class="check"><input type="checkbox" name="keepThumb"> Keep the current thumbnail</label>` : ''}
+            ${a.has_preview ? html`<label class="check"><input type="checkbox" name="keepPreview"> Keep the current preview</label>` : ''}
           </div>` : ''}
         </section>
       </div>
       <aside class="upload-side">
         <section class="panel sticky">
-          ${licenseFields(values, errors)}
+          ${licenseFields(ctx.catalog, values, errors)}
           <button class="btn btn-primary btn-lg btn-block" type="submit" data-submit>Save</button>
           ${progressBlock()}
           <p class="hint">A license change only applies to future downloads.</p>

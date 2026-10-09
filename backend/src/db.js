@@ -45,7 +45,7 @@ CREATE TABLE IF NOT EXISTS assets (
   file_size INTEGER NOT NULL,
   file_ext TEXT NOT NULL,
   file_kind TEXT NOT NULL,
-  file_sha256 TEXT NOT NULL,
+  file_sha256 TEXT NOT NULL DEFAULT '',
   preview_key TEXT,
   preview_ext TEXT,
   thumb_key TEXT,
@@ -108,6 +108,24 @@ CREATE TABLE IF NOT EXISTS reports (
   resolved_by INTEGER REFERENCES users(id) ON DELETE SET NULL
 );
 CREATE INDEX IF NOT EXISTS reports_status ON reports(status, created_at);
+
+-- Files the browser is uploading (or has uploaded) straight to storage but that aren't
+-- attached to an asset yet. Rows left behind are cleaned up after a day.
+CREATE TABLE IF NOT EXISTS uploads (
+  id TEXT PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  key TEXT NOT NULL,
+  field TEXT NOT NULL,
+  file_name TEXT NOT NULL,
+  ext TEXT NOT NULL,
+  size INTEGER NOT NULL,
+  content_type TEXT NOT NULL,
+  multipart_id TEXT,
+  part_size INTEGER,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS uploads_user ON uploads(user_id);
+CREATE INDEX IF NOT EXISTS uploads_created ON uploads(created_at);
 
 -- Files removed for copyright / abuse can't simply be uploaded again.
 CREATE TABLE IF NOT EXISTS blocked_hashes (

@@ -1,8 +1,7 @@
 'use strict';
-const { html, formatCount, formatBytes, formatDate, timeAgo, richText } = require('../../backend/src/html');
+const { html, formatCount, formatBytes, formatDate, timeAgo, richText } = require('../src/html');
 const { layout } = require('./layout');
 const { avatar, assetGrid, pagination, emptyState, meter, pageHref } = require('./components');
-const { SOFTWARE, LICENSES, KINDS, CATEGORY_MAP, SOFTWARE_MAP, LICENSE_MAP } = require('../../backend/src/catalog');
 
 function catNav(categories, activeId) {
   return html`<nav class="cat-nav" aria-label="Categories">
@@ -54,6 +53,7 @@ function filterLink(filters, changes) {
 }
 
 function browse(ctx, { filters, result, sorts, categories }) {
+  const { software: SOFTWARE, licenses: LICENSES, kinds: KINDS, categoryMap: CATEGORY_MAP, softwareMap: SOFTWARE_MAP, licenseMap: LICENSE_MAP } = ctx.catalog;
   const f = filters;
   const queryObj = {
     q: f.q, category: f.category, software: f.software, license: f.license, kind: f.kind, tag: f.tag,

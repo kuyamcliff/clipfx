@@ -1,24 +1,25 @@
 'use strict';
 
 module.exports = function adminRoutes(app, ctx) {
-  const { views, models, storage, requireAdmin } = ctx;
-  const back = (res, tab, msg) => { if (msg) res.flash('success', msg); res.redirect(303, `/admin${tab ? `?tab=${tab}` : ''}`); };
+  const { models, storage, requireAdmin } = ctx;
 
-  app.get('/admin', requireAdmin, (req, res) => {
+  app.get('/api/admin', requireAdmin, async (req, res) => {
     const tab = ['reports', 'assets', 'removed', 'users'].includes(req.query.tab) ? req.query.tab : 'reports';
     const q = typeof req.query.q === 'string' ? req.query.q.slice(0, 100) : '';
     const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
     const data = { tab, q, stats: models.assets.siteStats(), openReports: models.reports.openCount(), reasons: ctx.REPORT_REASONS };
     if (tab === 'reports') data.reports = models.reports.open();
-    if (tab === 'assets') data.result = models.assets.list({ q, includeUnlisted: true, includeBanned: true, page, perPage: 50 });
-    if (tab === 'removed') data.result = models.assets.list({ anyStatus: true, status: 'removed', includeUnlisted: true, includeBanned: true, page, perPage: 50 });
-    if (tab === 'users') data.users = models.users.search(q, 100);
-    res.view(views.admin, data);
+    if (tab === 'assets') data.result = await models.assets.list({ q, includeUnlisted: true, includeBanned: true, page, perPage: 50 });
+    if (tab === 'removed') data.result = await models.assets.list({ anyStatus: true, status: 'removed', includeUnlisted: true, includeBanned: true, page, perPage: 50 });
+    if (tab === 'users') {
+      data.users = models.users.search(q, 100).map((u) => ({ ...ctx.publicUser(u), email: u.email || '', asset_count: u.asset_count }));
+    }
+    res.ok(data);
   });
 
   const asset = (req, res) => {
     const a = models.assets.rawById(Number(req.params.id));
-    if (!a) res.fail(404, 'Not found', 'That asset no longer exists.');
+    if (!a) res.fail(404, 'That asset no longer exists.');
     return a;
   };
 
@@ -28,68 +29,68 @@ module.exports = function adminRoutes(app, ctx) {
     models.reports.resolveAllFor(a.id, 'actioned', adminId);
   }
 
-  app.post('/admin/reports/:id/dismiss', requireAdmin, (req, res) => {
+  app.post('/api/admin/reports/:id/dismiss', requireAdmin, (req, res) => {
     models.reports.resolve(Number(req.params.id), 'dismissed', req.user.id);
-    back(res, 'reports', 'Report dismissed.');
+    res.ok({ message: 'Report dismissed.' });
   });
 
-  app.post('/admin/reports/:id/remove', requireAdmin, (req, res) => {
+  app.post('/api/admin/reports/:id/remove', requireAdmin, (req, res) => {
     const r = models.reports.byId(Number(req.params.id));
-    if (!r) return back(res, 'reports');
+    if (!r) return res.fail(404, 'That report no longer exists.');
     const a = models.assets.rawById(r.asset_id);
-    if (a) removeAsset(a, String(req.body.reason || r.reason).slice(0, 200), req.body.block === 'on', req.user.id);
-    return back(res, 'reports', 'Asset removed and reports resolved.');
+    if (a) removeAsset(a, String(req.body.reason || r.reason).slice(0, 200), !!req.body.block, req.user.id);
+    return res.ok({ message: 'Asset removed and reports resolved.' });
   });
 
-  app.post('/admin/assets/:id/remove', requireAdmin, (req, res) => {
+  app.post('/api/admin/assets/:id/remove', requireAdmin, (req, res) => {
     const a = asset(req, res);
     if (!a) return undefined;
-    removeAsset(a, String(req.body.reason || 'guidelines').slice(0, 200), req.body.block === 'on', req.user.id);
-    return back(res, req.body.tab || 'assets', `Removed “${a.title}”.`);
+    removeAsset(a, String(req.body.reason || 'guidelines').slice(0, 200), !!req.body.block, req.user.id);
+    return res.ok({ message: `Removed “${a.title}”.` });
   });
 
-  app.post('/admin/assets/:id/restore', requireAdmin, (req, res) => {
+  app.post('/api/admin/assets/:id/restore', requireAdmin, (req, res) => {
     const a = asset(req, res);
     if (!a) return undefined;
     models.assets.setStatus(a.id, 'active', null);
-    models.db.prepare('DELETE FROM blocked_hashes WHERE sha256 = ?').run(a.file_sha256);
-    return back(res, 'removed', `Restored “${a.title}”.`);
+    if (a.file_sha256) models.assets.unblockHash(a.file_sha256);
+    return res.ok({ message: `Restored “${a.title}”.` });
   });
 
-  app.post('/admin/assets/:id/purge', requireAdmin, async (req, res) => {
+  app.post('/api/admin/assets/:id/purge', requireAdmin, async (req, res) => {
     const a = asset(req, res);
     if (!a) return undefined;
     models.assets.remove(a.id);
-    await Promise.all([a.file_key, a.preview_key, a.thumb_key].map((k) => storage.remove(k)));
-    return back(res, 'removed', `Permanently deleted “${a.title}”.`);
+    for (const k of [a.file_key, a.preview_key, a.thumb_key]) await storage.remove(k);
+    return res.ok({ message: `Permanently deleted “${a.title}”.` });
   });
 
   const target = (req, res) => {
     const u = models.users.byId(Number(req.params.id));
-    if (!u) { res.fail(404, 'Not found', 'That user no longer exists.'); return null; }
-    if (u.id === req.user.id) { res.fail(400, 'Not allowed', 'You can’t do that to your own account.'); return null; }
+    if (!u) { res.fail(404, 'That user no longer exists.'); return null; }
+    if (u.id === req.user.id) { res.fail(400, 'You can’t do that to your own account.'); return null; }
     return u;
   };
 
-  app.post('/admin/users/:id/ban', requireAdmin, (req, res) => {
+  app.post('/api/admin/users/:id/ban', requireAdmin, (req, res) => {
     const u = target(req, res);
     if (!u) return undefined;
     models.users.setBanned(u.id, !u.banned);
     if (!u.banned) models.sessions.destroyAllFor(u.id);
-    return back(res, 'users', u.banned ? `@${u.username} was unbanned.` : `@${u.username} was banned and their uploads hidden.`);
+    return res.ok({ message: u.banned ? `@${u.username} was unbanned.` : `@${u.username} was banned and their uploads hidden.` });
   });
 
-  app.post('/admin/users/:id/role', requireAdmin, (req, res) => {
+  app.post('/api/admin/users/:id/role', requireAdmin, (req, res) => {
     const u = target(req, res);
     if (!u) return undefined;
     models.users.setRole(u.id, u.role === 'admin' ? 'user' : 'admin');
-    return back(res, 'users', `@${u.username} is now ${u.role === 'admin' ? 'a regular member' : 'a moderator'}.`);
+    return res.ok({ message: `@${u.username} is now ${u.role === 'admin' ? 'a regular member' : 'a moderator'}.` });
   });
 
-  app.post('/admin/users/:id/reset', requireAdmin, (req, res) => {
+  app.post('/api/admin/users/:id/reset', requireAdmin, (req, res) => {
     const u = target(req, res);
     if (!u) return undefined;
-    const token = models.resets.create(u.id);
-    return back(res, 'users', `Password reset link for @${u.username} (valid 24h, share it privately): ${ctx.absolute(req, `/reset/${token}`)}`);
+    const link = ctx.absolute(req, `/reset/${models.resets.create(u.id)}`);
+    return res.ok({ link, message: `Password reset link for @${u.username} (valid 24 hours, share it privately): ${link}` });
   });
 };

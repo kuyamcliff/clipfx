@@ -1,5 +1,5 @@
 'use strict';
-const { html } = require('../../backend/src/html');
+const { html } = require('../src/html');
 const { layout } = require('./layout');
 const { csrfField, fieldError, invalid } = require('./components');
 

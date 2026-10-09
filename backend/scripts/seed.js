@@ -58,14 +58,14 @@ async function main() {
     const ext = path.extname(file).slice(1);
     const { FILE_TYPES } = require('../src/catalog');
     const size = fs.statSync(file).size;
-    const sha256 = crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
-    const fileKey = await storage.moveIn(file, ext);
+    const fileKey = storage.newKey('f', ext);
     const kind = FILE_TYPES[ext].kind;
+    await storage.putFile(file, fileKey, FILE_TYPES[ext].inline ? FILE_TYPES[ext].mime : 'application/octet-stream');
     const { id } = models.assets.create({
       userId: user.id, title: d.title, description: `${d.title} — demo content generated for local development.\n\nReplace it with real uploads!`,
       category: d.category, software: d.software, tags: d.tags.split(', '), license: d.license, visibility: 'public',
-      fileName: `${d.title.replace(/\W+/g, '-').toLowerCase()}.${ext}`, fileKey, fileSize: size, fileExt: ext, fileKind: kind, sha256,
-      mediaStatus: media.needsWork(kind) ? 'pending' : 'none',
+      fileName: `${d.title.replace(/\W+/g, '-').toLowerCase()}.${ext}`, fileKey, fileSize: size, fileExt: ext, fileKind: kind,
+      mediaStatus: media.needsMedia(kind) ? 'pending' : 'none',
     });
     models.db.prepare('UPDATE assets SET downloads = ?, views = ? WHERE id = ?').run(Math.floor(Math.random() * 900), Math.floor(Math.random() * 4000), id);
     media.enqueue(id);

@@ -1,0 +1,48 @@
+# Render Blueprint for the ClipFX API (backend/).
+# Render → New → Blueprint → pick this repo. You'll be asked for the values marked sync: false.
+services:
+  - type: web
+    name: clipfx-api
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    # A persistent disk needs a paid instance. The SQLite database lives on it; files live in R2.
+    plan: starter
+    # Keep this close to your Vercel functions' region (Vercel's default is iad1, Washington D.C.).
+    region: virginia
+    healthCheckPath: /healthz
+    autoDeploy: true
+    buildFilter:
+      paths:
+        - backend/**
+    disk:
+      name: clipfx-data
+      mountPath: /data
+      sizeGB: 1
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATA_DIR
+        value: /data
+      - key: TRUST_PROXY
+        value: "1"
+      - key: STORAGE
+        value: r2
+      # Your Vercel site, e.g. https://clipfx.vercel.app (used for share links and the origin check).
+      - key: BASE_URL
+        sync: false
+      # Any long random string. Must be identical in Vercel's INTERNAL_SECRET.
+      - key: INTERNAL_SECRET
+        sync: false
+      - key: R2_ACCOUNT_ID
+        sync: false
+      - key: R2_ACCESS_KEY_ID
+        sync: false
+      - key: R2_SECRET_ACCESS_KEY
+        sync: false
+      - key: R2_BUCKET
+        sync: false
+      - key: DONATE_URL
+        sync: false
+      - key: CONTACT_EMAIL
+        sync: false

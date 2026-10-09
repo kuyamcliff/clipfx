@@ -1,10 +1,7 @@
 'use strict';
 const crypto = require('node:crypto');
 const { transaction } = require('./db');
-const {
-  CATEGORY_MAP, LICENSE_MAP, SOFTWARE_MAP, FILE_TYPES, KINDS, CATEGORIES,
-} = require('./catalog');
-const { formatBytes, formatDuration } = require('./html');
+const { LICENSE_MAP, CATEGORIES, FILE_TYPES } = require('./catalog');
 
 const SESSION_TTL = 30 * 24 * 3600 * 1000;
 const DAY = 24 * 3600 * 1000;
@@ -22,60 +19,68 @@ function randomSlug(len = 8) {
 const listToField = (arr) => (arr.length ? `,${arr.join(',')},` : ',');
 const fieldToList = (s) => String(s || '').split(',').filter(Boolean);
 
-function resolutionLabel(w, h) {
-  if (!w || !h) return '';
-  const short = Math.min(w, h);
-  const long = Math.max(w, h);
-  if (short >= 4320 || long >= 7680) return '8K';
-  if (short >= 2160 || long >= 3840) return '4K';
-  if (short >= 1440 || long >= 2560) return '2K';
-  if (short >= 1080 || long >= 1920) return '1080p';
-  if (short >= 720 || long >= 1280) return '720p';
-  return `${w}×${h}`;
+const MEDIA_MIME = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', mp4: 'video/mp4', webm: 'video/webm', mp3: 'audio/mpeg' };
+const IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp']);
+const WEB_VIDEO = new Set(['mp4', 'm4v', 'webm', 'mov']);
+const extOfKey = (key) => (/\.([a-z0-9]+)$/i.exec(key || '') || [])[1] || '';
+
+// Signed URLs for everything a page shows inline. Download URLs are issued separately, per click.
+async function mediaUrls(row, storage) {
+  const out = { thumbUrl: null, videoSrc: null, audioSrc: null, imageSrc: null };
+  const url = (key, contentType) => storage.urlFor(key, { contentType, stable: true });
+  if (row.thumb_key) out.thumbUrl = await url(row.thumb_key, MEDIA_MIME[extOfKey(row.thumb_key)]);
+  if (row.preview_key) {
+    const src = await url(row.preview_key, MEDIA_MIME[row.preview_ext]);
+    if (IMAGE_EXTS.has(row.preview_ext)) out.imageSrc = src;
+    else if (row.preview_ext === 'mp3') out.audioSrc = src;
+    else out.videoSrc = src;
+  }
+  const type = FILE_TYPES[row.file_ext] || {};
+  if (type.inline) {
+    if (row.file_kind === 'video' && !out.videoSrc && WEB_VIDEO.has(row.file_ext)) out.videoSrc = await url(row.file_key, type.mime);
+    if (row.file_kind === 'audio' && !out.audioSrc) out.audioSrc = await url(row.file_key, type.mime);
+    if (row.file_kind === 'image' && !out.imageSrc) out.imageSrc = await url(row.file_key, type.mime);
+  }
+  if (!out.thumbUrl && out.imageSrc) out.thumbUrl = out.imageSrc;
+  return out;
 }
 
-const WEB_VIDEO = new Set(['mp4', 'm4v', 'webm', 'mov']);
-
-// Turn a DB row into something views can use directly.
-function decorate(row) {
+// The public shape of an asset. Storage keys and hashes stay on the server.
+async function serialize(row, storage) {
   if (!row) return null;
-  const type = FILE_TYPES[row.file_ext] || {};
-  const base = `/a/${row.slug}`;
-  const media = `/m/${row.slug}`;
-  const category = CATEGORY_MAP[row.category] || CATEGORY_MAP.other;
-  const a = {
-    ...row,
-    url: base,
-    downloadUrl: `${base}/download`,
-    category,
-    license: LICENSE_MAP[row.license] || LICENSE_MAP.free,
-    software: fieldToList(row.software).map((id) => SOFTWARE_MAP[id]).filter(Boolean),
+  return {
+    id: row.id,
+    slug: row.slug,
+    user_id: row.user_id,
+    username: row.username,
+    display_name: row.display_name,
+    user_banned: !!row.user_banned,
+    title: row.title,
+    description: row.description,
+    category: row.category,
+    software: fieldToList(row.software),
     tags: fieldToList(row.tags),
-    kind: row.file_kind,
-    kindInfo: KINDS[row.file_kind] || KINDS.archive,
-    sizeLabel: formatBytes(row.file_size),
-    durationLabel: formatDuration(row.duration),
-    resolution: resolutionLabel(row.width, row.height),
-    vertical: row.width && row.height && row.height > row.width,
-    thumbUrl: null,
-    videoSrc: null,
-    audioSrc: null,
-    imageSrc: null,
+    license: row.license,
+    visibility: row.visibility,
+    file_name: row.file_name,
+    file_size: row.file_size,
+    file_ext: row.file_ext,
+    file_kind: row.file_kind,
+    width: row.width,
+    height: row.height,
+    duration: row.duration,
+    downloads: row.downloads,
+    views: row.views,
+    favorites: row.favorites || 0,
+    status: row.status,
+    removed_reason: row.removed_reason,
+    has_thumb: !!row.thumb_key,
+    has_preview: !!row.preview_key,
+    processing: row.media_status === 'pending',
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+    ...(await mediaUrls(row, storage)),
   };
-  if (row.thumb_key) a.thumbUrl = `${media}/thumb?v=${row.updated_at}`;
-  if (row.preview_key) {
-    if (['png', 'jpg', 'jpeg', 'gif', 'webp'].includes(row.preview_ext)) a.imageSrc = `${media}/preview`;
-    else if (row.preview_ext === 'mp3') a.audioSrc = `${media}/preview`;
-    else a.videoSrc = `${media}/preview`;
-  }
-  if (type.inline) {
-    if (a.kind === 'video' && !a.videoSrc && WEB_VIDEO.has(row.file_ext)) a.videoSrc = `${media}/file`;
-    if (a.kind === 'audio' && !a.audioSrc) a.audioSrc = `${media}/file`;
-    if (a.kind === 'image' && !a.imageSrc) a.imageSrc = `${media}/file`;
-  }
-  if (!a.thumbUrl && a.imageSrc) a.thumbUrl = a.imageSrc;
-  a.processing = row.media_status === 'pending';
-  return a;
 }
 
 function buildSearch(q) {
@@ -83,13 +88,14 @@ function buildSearch(q) {
   return words.slice(0, 8).map((w) => `"${w}"*`).join(' ');
 }
 
-function createModels(db) {
+function createModels(db, { storage }) {
   const cache = new Map();
   const st = (sql) => {
     let s = cache.get(sql);
     if (!s) { s = db.prepare(sql); cache.set(sql, s); }
     return s;
   };
+  const serializeAll = (rows) => Promise.all(rows.map((r) => serialize(r, storage)));
 
   const users = {
     byId: (id) => st('SELECT * FROM users WHERE id = ?').get(id),
@@ -112,10 +118,14 @@ function createModels(db) {
     setBanned: (id, banned) => st('UPDATE users SET banned = ? WHERE id = ?').run(banned ? 1 : 0, id),
     remove: (id) => st('DELETE FROM users WHERE id = ?').run(id),
     stats(id) {
-      return st(`SELECT COUNT(*) AS uploads, COALESCE(SUM(downloads), 0) AS downloads, COALESCE(SUM(file_size), 0) AS bytes
+      return st(`SELECT COUNT(*) AS uploads, COALESCE(SUM(downloads), 0) AS downloads
         FROM assets WHERE user_id = ? AND status = 'active'`).get(id);
     },
-    storageUsed: (id) => st('SELECT COALESCE(SUM(file_size), 0) AS n FROM assets WHERE user_id = ?').get(id).n,
+    // Includes uploads in flight, so quota can't be dodged by starting many uploads at once.
+    storageUsed(id) {
+      return st(`SELECT (SELECT COALESCE(SUM(file_size), 0) FROM assets WHERE user_id = ?)
+        + (SELECT COALESCE(SUM(size), 0) FROM uploads WHERE user_id = ?) AS n`).get(id, id).n;
+    },
     search(q, limit = 50) {
       const like = `%${String(q || '').toLowerCase().replace(/[%_]/g, '')}%`;
       return st(`SELECT u.*, (SELECT COUNT(*) FROM assets a WHERE a.user_id = u.id) AS asset_count
@@ -154,11 +164,22 @@ function createModels(db) {
     consume: (token) => st('DELETE FROM reset_tokens WHERE token_hash = ?').run(sha(String(token))),
   };
 
+  const uploads = {
+    create(v) {
+      st(`INSERT INTO uploads (id, user_id, key, field, file_name, ext, size, content_type, multipart_id, part_size, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(v.id, v.userId, v.key, v.field, v.fileName, v.ext, v.size, v.contentType,
+        v.multipartId || null, v.partSize || null, Date.now());
+    },
+    get: (id, userId) => st('SELECT * FROM uploads WHERE id = ? AND user_id = ?').get(String(id), userId),
+    remove: (id) => st('DELETE FROM uploads WHERE id = ?').run(id),
+    stale: (olderThan) => st('SELECT * FROM uploads WHERE created_at < ?').all(olderThan),
+  };
+
   const SELECT_ASSET = `SELECT a.*, u.username, u.display_name, u.banned AS user_banned,
     (SELECT COUNT(*) FROM favorites f WHERE f.asset_id = a.id) AS favorites FROM assets a JOIN users u ON u.id = a.user_id`;
 
   const assets = {
-    decorate,
+    serialize: (row) => serialize(row, storage),
     create(v) {
       for (let attempt = 0; ; attempt++) {
         const slug = randomSlug(attempt > 3 ? 10 : 8);
@@ -169,7 +190,7 @@ function createModels(db) {
             width, height, duration, media_status, created_at, updated_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
             slug, v.userId, v.title, v.description, v.category, listToField(v.software), listToField(v.tags), v.license, v.visibility,
-            v.fileName, v.fileKey, v.fileSize, v.fileExt, v.fileKind, v.sha256, v.previewKey || null, v.previewExt || null,
+            v.fileName, v.fileKey, v.fileSize, v.fileExt, v.fileKind, v.sha256 || '', v.previewKey || null, v.previewExt || null,
             v.thumbKey || null, v.width || null, v.height || null, v.duration || null, v.mediaStatus || 'none', now, now,
           );
           return { id: Number(r.lastInsertRowid), slug };
@@ -178,13 +199,13 @@ function createModels(db) {
         }
       }
     },
-    bySlug: (slug) => decorate(st(`${SELECT_ASSET} WHERE a.slug = ?`).get(String(slug))),
+    rowBySlug: (slug) => st(`${SELECT_ASSET} WHERE a.slug = ?`).get(String(slug)),
     rawById: (id) => st('SELECT * FROM assets WHERE id = ?').get(id),
     update(id, v) {
       st(`UPDATE assets SET title = ?, description = ?, category = ?, software = ?, tags = ?, license = ?, visibility = ?, updated_at = ?
         WHERE id = ?`).run(v.title, v.description, v.category, listToField(v.software), listToField(v.tags), v.license, v.visibility, Date.now(), id);
     },
-    setMedia(id, fields) {
+    setFields(id, fields) {
       const keys = Object.keys(fields);
       if (!keys.length) return;
       const sets = keys.map((k) => `${k} = ?`).join(', ');
@@ -193,6 +214,7 @@ function createModels(db) {
     setStatus: (id, status, reason) => st('UPDATE assets SET status = ?, removed_reason = ?, updated_at = ? WHERE id = ?').run(status, reason || null, Date.now(), id),
     remove: (id) => st('DELETE FROM assets WHERE id = ?').run(id),
     keysForUser: (userId) => st('SELECT file_key, preview_key, thumb_key FROM assets WHERE user_id = ?').all(userId),
+    needingWork: () => st("SELECT id FROM assets WHERE media_status = 'pending' OR file_sha256 = ''").all(),
     addView: (id) => st('UPDATE assets SET views = views + 1 WHERE id = ?').run(id),
     addDownload(id) {
       transaction(db, () => {
@@ -201,11 +223,12 @@ function createModels(db) {
           ON CONFLICT(asset_id, day) DO UPDATE SET count = count + 1`).run(id, today());
       });
     },
-    isBlockedHash: (h) => !!st('SELECT 1 FROM blocked_hashes WHERE sha256 = ?').get(h),
-    blockHash: (h, reason) => st('INSERT OR IGNORE INTO blocked_hashes (sha256, reason, created_at) VALUES (?, ?, ?)').run(h, reason, Date.now()),
+    isBlockedHash: (h) => !!h && !!st('SELECT 1 FROM blocked_hashes WHERE sha256 = ?').get(h),
+    blockHash: (h, reason) => h && st('INSERT OR IGNORE INTO blocked_hashes (sha256, reason, created_at) VALUES (?, ?, ?)').run(h, reason, Date.now()),
+    unblockHash: (h) => st('DELETE FROM blocked_hashes WHERE sha256 = ?').run(h),
 
     // Flexible listing used by browse, profiles, dashboard, favorites and admin.
-    list(opts = {}) {
+    async list(opts = {}) {
       const where = [];
       const params = [];
       if (!opts.anyStatus) where.push("a.status = 'active'");
@@ -244,14 +267,14 @@ function createModels(db) {
       const rows = st(`SELECT a.*, u.username, u.display_name, u.banned AS user_banned,
         (SELECT COUNT(*) FROM favorites f WHERE f.asset_id = a.id) AS favorites
         ${from} ${whereSql} ORDER BY ${order} LIMIT ? OFFSET ?`).all(...params, ...extraParams, perPage, (page - 1) * perPage);
-      return { items: rows.map(decorate), total, page, perPage, pages: Math.max(1, Math.ceil(total / perPage)) };
+      return { items: await serializeAll(rows), total, page, perPage, pages: Math.max(1, Math.ceil(total / perPage)) };
     },
 
     categoryCounts() {
       const rows = st(`SELECT a.category, COUNT(*) AS n FROM assets a JOIN users u ON u.id = a.user_id
         WHERE a.status = 'active' AND a.visibility = 'public' AND u.banned = 0 GROUP BY a.category`).all();
       const map = Object.fromEntries(rows.map((r) => [r.category, r.n]));
-      return CATEGORIES.map((c) => ({ ...c, count: map[c.id] || 0 }));
+      return CATEGORIES.map((c) => ({ id: c.id, count: map[c.id] || 0 }));
     },
 
     siteStats() {
@@ -261,6 +284,11 @@ function createModels(db) {
         (SELECT COUNT(DISTINCT user_id) FROM assets WHERE status = 'active') AS creators,
         (SELECT COUNT(*) FROM users) AS users,
         (SELECT COALESCE(SUM(file_size), 0) FROM assets) AS bytes`).get();
+    },
+
+    sitemap() {
+      return st(`SELECT a.slug, a.updated_at FROM assets a JOIN users u ON u.id = a.user_id
+        WHERE a.status = 'active' AND a.visibility = 'public' AND u.banned = 0 ORDER BY a.created_at DESC LIMIT 45000`).all();
     },
   };
 
@@ -289,7 +317,7 @@ function createModels(db) {
     resolveAllFor: (assetId, status, by) => st("UPDATE reports SET status = ?, resolved_at = ?, resolved_by = ? WHERE asset_id = ? AND status = 'open'").run(status, Date.now(), by, assetId),
   };
 
-  return { db, users, sessions, resets, assets, favorites, reports };
+  return { db, users, sessions, resets, uploads, assets, favorites, reports };
 }
 
-module.exports = { createModels, decorate, resolutionLabel, buildSearch, randomSlug };
+module.exports = { createModels, serialize, buildSearch, randomSlug, MEDIA_MIME, extOfKey };
