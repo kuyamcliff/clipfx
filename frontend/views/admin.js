@@ -1,75 +1,83 @@
 'use strict';
-const { html, formatCount, formatBytes, timeAgo, formatDate } = require('../src/html');
+const { html, raw, formatCount, formatBytes, timeAgo, formatDate } = require('../src/html');
 const { layout } = require('./layout');
-const { avatar, csrfField, emptyState, pagination } = require('./components');
+const { icon, hue, avatar, csrfField, emptyState, pagination, media } = require('./components');
 
 function admin(ctx, { tab, q, stats, openReports, reports, result, users, reasons }) {
   const backUrl = `/admin?tab=${tab}${q ? `&q=${encodeURIComponent(q)}` : ''}`;
-  const tabs = [['reports', `Reports${openReports ? ` (${openReports})` : ''}`], ['assets', 'All assets'], ['removed', 'Removed'], ['users', 'Users']];
+  const back = html`<input type="hidden" name="back" value="${backUrl}">`;
+  const tabs = [['reports', 'Reports', openReports], ['assets', 'Assets'], ['removed', 'Removed'], ['users', 'Users']];
+  const search = (placeholder) => html`<form class="adminsearch" action="/admin" role="search">
+    <input type="hidden" name="tab" value="${tab}">
+    ${icon('search')}<input type="search" name="q" value="${q}" placeholder="${placeholder}" aria-label="${placeholder}">
+    <button class="btn btn-sm">Search</button>
+  </form>`;
   let content;
 
   if (tab === 'reports') {
-    content = reports.length ? html`<div>${reports.map((r) => html`<article class="report">
-      <div class="report-head">
-        <div><span class="status status-warn">${reasons[r.reason] || r.reason}</span>
-          <h3><a href="/a/${r.slug}">${r.title}</a> ${r.asset_status !== 'active' ? html`<span class="status status-danger">Removed</span>` : ''}</h3>
-          <p class="muted small">Reported ${timeAgo(r.created_at)} by ${r.reporter ? html`<a href="/u/${r.reporter}">@${r.reporter}</a>` : 'a visitor'}${r.contact ? html` · contact: ${r.contact}` : ''}</p>
-        </div>
+    content = reports.length ? html`<div class="reports">${reports.map((r) => html`<article class="reportcard">
+      <div class="reportcard-head">
+        <span class="pill pill-warn">${reasons[r.reason] || r.reason}</span>
+        ${r.asset_status !== 'active' ? html`<span class="pill pill-danger">Removed</span>` : ''}
+        <span class="dim">${timeAgo(r.created_at)}</span>
       </div>
+      <h3><a href="/a/${r.slug}">${r.title}</a></h3>
+      <p class="hint">Reported by ${r.reporter ? html`<a href="/u/${r.reporter}">@${r.reporter}</a>` : 'a visitor'}${r.contact ? html`, contact: ${r.contact}` : ''}</p>
       ${r.details ? html`<blockquote>${r.details}</blockquote>` : ''}
-      <div class="btn-row">
-        <form method="post" action="/admin/reports/${r.id}/remove" class="inline-form" data-confirm="Remove this asset from the site?">${csrfField(ctx)}<input type="hidden" name="back" value="${backUrl}">
+      <div class="reportcard-actions">
+        <form method="post" action="/admin/reports/${r.id}/remove" data-confirm="Remove this asset from the site?">${csrfField(ctx)}${back}
           <input type="hidden" name="reason" value="${reasons[r.reason] || r.reason}">
-          <label class="check small"><input type="checkbox" name="block" ${['copyright', 'stolen', 'malware'].includes(r.reason) ? 'checked' : ''}> Block re-uploads</label>
-          <button class="btn btn-danger btn-sm" type="submit">Remove asset</button>
+          <label class="check"><input type="checkbox" name="block" ${['copyright', 'stolen', 'malware'].includes(r.reason) ? 'checked' : ''}><span>Block re-uploads</span></label>
+          <button class="btn btn-sm btn-danger" type="submit">Remove asset</button>
         </form>
-        <form method="post" action="/admin/reports/${r.id}/dismiss">${csrfField(ctx)}<input type="hidden" name="back" value="${backUrl}"><button class="btn btn-ghost btn-sm" type="submit">Dismiss</button></form>
+        <form method="post" action="/admin/reports/${r.id}/dismiss">${csrfField(ctx)}${back}<button class="btn btn-sm btn-quiet" type="submit">Dismiss</button></form>
       </div>
-    </article>`)}</div>` : emptyState(null, 'No open reports', 'New reports show up here.');
+    </article>`)}</div>` : emptyState('No open reports', 'New reports will show up here.');
   } else if (tab === 'assets' || tab === 'removed') {
     content = html`
-      ${tab === 'assets' ? html`<form class="admin-search" action="/admin"><input type="hidden" name="tab" value="assets"><input type="search" name="q" value="${q}" placeholder="Search titles, tags…" aria-label="Search assets"><button class="btn btn-secondary btn-sm">Search</button></form>` : ''}
-      ${result.items.length ? html`<div class="table-wrap"><table class="table">
-        <thead><tr><th scope="col">Asset</th><th scope="col">Uploader</th><th scope="col" class="num">Downloads</th><th scope="col">Uploaded</th><th scope="col">Actions</th></tr></thead>
-        <tbody>${result.items.map((a) => html`<tr>
-          <td><a class="table-asset" href="${a.url}"><span class="table-thumb">${a.thumbUrl ? html`<img src="${a.thumbUrl}" alt="" loading="lazy">` : `.${a.file_ext}`}</span>
-            <span><strong>${a.title}</strong><span class="mono">${a.category.name} · ${formatBytes(a.file_size)} · ${a.visibility}${a.removed_reason ? ` · ${a.removed_reason}` : ''}</span></span></a></td>
-          <td><a href="/u/${a.username}">@${a.username}</a>${a.user_banned ? html` <span class="status status-danger">banned</span>` : ''}</td>
-          <td class="num">${formatCount(a.downloads)}</td>
-          <td>${timeAgo(a.created_at)}</td>
-          <td class="actions">${tab === 'assets'
-    ? html`<form method="post" action="/admin/assets/${a.id}/remove" data-confirm="Remove “${a.title}”?">${csrfField(ctx)}<input type="hidden" name="back" value="${backUrl}"><input type="hidden" name="reason" value="Guidelines violation"><button class="btn btn-danger-ghost btn-sm">Remove</button></form>`
-    : html`<form method="post" action="/admin/assets/${a.id}/restore">${csrfField(ctx)}<input type="hidden" name="back" value="${backUrl}"><button class="btn btn-ghost btn-sm">Restore</button></form>
-              <form method="post" action="/admin/assets/${a.id}/purge" data-confirm="Permanently delete the files? This can’t be undone.">${csrfField(ctx)}<input type="hidden" name="back" value="${backUrl}"><button class="btn btn-danger-ghost btn-sm">Delete files</button></form>`}</td>
-        </tr>`)}</tbody></table></div>` : emptyState('box', 'Nothing here', tab === 'removed' ? 'No assets have been removed.' : 'No assets match.')}
+      ${tab === 'assets' ? search('Search titles and tags') : ''}
+      ${result.items.length ? html`<ul class="rows">${result.items.map((a) => html`<li class="row row-admin" ${hue(a.category)}>
+        <a class="row-thumb" href="${a.url}" tabindex="-1" aria-hidden="true">${media(a)}</a>
+        <div class="row-main">
+          <a class="row-title" href="${a.url}">${a.title}</a>
+          <p class="row-meta">${a.category.name} · ${formatBytes(a.file_size)} · ${a.visibility}${a.removed_reason ? ` · ${a.removed_reason}` : ''}</p>
+          <p class="row-meta"><a href="/u/${a.username}">@${a.username}</a>${a.user_banned ? html` <span class="pill pill-danger">Banned</span>` : ''} · ${timeAgo(a.created_at)}</p>
+        </div>
+        <dl class="row-stats"><div><dt>Downloads</dt><dd>${formatCount(a.downloads)}</dd></div></dl>
+        <div class="row-actions">${tab === 'assets'
+    ? html`<form method="post" action="/admin/assets/${a.id}/remove" data-confirm="Remove &quot;${a.title}&quot;?">${csrfField(ctx)}${back}<input type="hidden" name="reason" value="Guidelines violation"><button class="btn btn-sm btn-danger">Remove</button></form>`
+    : html`<form method="post" action="/admin/assets/${a.id}/restore">${csrfField(ctx)}${back}<button class="btn btn-sm">Restore</button></form>
+          <form method="post" action="/admin/assets/${a.id}/purge" data-confirm="Permanently delete the files? This can't be undone.">${csrfField(ctx)}${back}<button class="btn btn-sm btn-danger">Delete files</button></form>`}</div>
+      </li>`)}</ul>` : emptyState('Nothing here', tab === 'removed' ? 'No assets have been removed.' : 'No assets match.')}
       ${pagination(result, '/admin', { tab, q })}`;
   } else {
     content = html`
-      <form class="admin-search" action="/admin"><input type="hidden" name="tab" value="users"><input type="search" name="q" value="${q}" placeholder="Username, name or email" aria-label="Search users"><button class="btn btn-secondary btn-sm">Search</button></form>
-      <div class="table-wrap"><table class="table">
-        <thead><tr><th scope="col">User</th><th scope="col">Email</th><th scope="col" class="num">Assets</th><th scope="col">Joined</th><th scope="col">Actions</th></tr></thead>
-        <tbody>${users.map((u) => html`<tr>
-          <td><a class="table-asset" href="/u/${u.username}">${avatar(u, 'sm')}<span><strong>${u.display_name}</strong><span class="mono">@${u.username}${u.role === 'admin' ? ' · moderator' : ''}${u.banned ? ' · banned' : ''}</span></span></a></td>
-          <td class="small">${u.email || html`<span class="muted">—</span>`}</td>
-          <td class="num">${u.asset_count}</td>
-          <td>${formatDate(u.created_at)}</td>
-          <td class="actions">${u.id === ctx.user.id ? html`<span class="muted small">You</span>` : html`
-            <form method="post" action="/admin/users/${u.id}/ban" data-confirm="${u.banned ? 'Unban' : 'Ban'} @${u.username}?">${csrfField(ctx)}<input type="hidden" name="back" value="${backUrl}"><button class="btn ${u.banned ? 'btn-ghost' : 'btn-danger-ghost'} btn-sm">${u.banned ? 'Unban' : 'Ban'}</button></form>
-            <form method="post" action="/admin/users/${u.id}/role" data-confirm="Change @${u.username}’s role?">${csrfField(ctx)}<input type="hidden" name="back" value="${backUrl}"><button class="btn btn-ghost btn-sm">${u.role === 'admin' ? 'Remove mod' : 'Make mod'}</button></form>
-            <form method="post" action="/admin/users/${u.id}/reset">${csrfField(ctx)}<input type="hidden" name="back" value="${backUrl}"><button class="btn btn-ghost btn-sm">Reset link</button></form>`}</td>
-        </tr>`)}</tbody></table></div>`;
+      ${search('Username, name or email')}
+      ${users.length ? html`<ul class="rows">${users.map((u) => html`<li class="row row-user">
+        ${avatar(u)}
+        <div class="row-main">
+          <a class="row-title" href="/u/${u.username}">${u.display_name}</a>
+          <p class="row-meta">@${u.username}${u.role === 'admin' ? ' · moderator' : ''}${u.banned ? html` <span class="pill pill-danger">Banned</span>` : ''}</p>
+          <p class="row-meta">${u.email || 'No email'} · joined ${formatDate(u.created_at)}</p>
+        </div>
+        <dl class="row-stats"><div><dt>Assets</dt><dd>${formatCount(u.asset_count)}</dd></div></dl>
+        <div class="row-actions">${u.id === ctx.user.id ? html`<span class="dim">That's you</span>` : html`
+          <form method="post" action="/admin/users/${u.id}/ban" data-confirm="${u.banned ? 'Unban' : 'Ban'} @${u.username}?">${csrfField(ctx)}${back}<button class="btn btn-sm ${u.banned ? '' : 'btn-danger'}">${u.banned ? 'Unban' : 'Ban'}</button></form>
+          <form method="post" action="/admin/users/${u.id}/role" data-confirm="Change @${u.username}'s role?">${csrfField(ctx)}${back}<button class="btn btn-sm btn-quiet">${u.role === 'admin' ? 'Remove mod' : 'Make mod'}</button></form>
+          <form method="post" action="/admin/users/${u.id}/reset">${csrfField(ctx)}${back}<button class="btn btn-sm btn-quiet">Reset link</button></form>`}</div>
+      </li>`)}</ul>` : emptyState('No users found', 'Try a different search.')}`;
   }
 
   const body = html`
-  <div class="container">
-    <header class="page-head"><h1>Moderation</h1></header>
-    <div class="summary">
-      <span><b>${formatCount(stats.assets)}</b> public assets</span>
-      <span><b>${formatCount(stats.users)}</b> members</span>
-      <span><b>${formatCount(stats.downloads)}</b> downloads</span>
-      <span><b>${formatBytes(stats.bytes)}</b> stored</span>
+  <div class="wrap">
+    <header class="pagehead"><div><h1>Moderation</h1><p class="sub">Reports, removals and accounts.</p></div></header>
+    <div class="tiles">
+      <div class="tile-stat"><p class="tile-label">Public assets</p><p class="tile-num">${formatCount(stats.assets)}</p></div>
+      <div class="tile-stat"><p class="tile-label">Members</p><p class="tile-num">${formatCount(stats.users)}</p></div>
+      <div class="tile-stat"><p class="tile-label">Downloads</p><p class="tile-num">${formatCount(stats.downloads)}</p></div>
+      <div class="tile-stat"><p class="tile-label">Stored</p><p class="tile-num">${formatBytes(stats.bytes)}</p></div>
     </div>
-    <nav class="tabs" aria-label="Moderation sections">${tabs.map(([id, label]) => html`<a href="/admin?tab=${id}" class="${tab === id ? 'active' : ''}" ${tab === id ? html`aria-current="page"` : ''}>${label}</a>`)}</nav>
+    <nav class="seg seg-tabs" aria-label="Moderation sections">${tabs.map(([id, label, n]) => html`<a href="/admin?tab=${id}" ${tab === id ? raw('aria-current="page"') : ''}>${label}${n ? html` <span class="badge">${n}</span>` : ''}</a>`)}</nav>
     ${content}
   </div>`;
   return layout(ctx, { title: 'Moderation', body, noindex: true });

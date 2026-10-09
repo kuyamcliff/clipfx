@@ -32,7 +32,7 @@ const SOFTWARE = [
 
 const LICENSES = [
   {
-    id: 'cc0', name: 'CC0 1.0 — Public Domain', short: 'CC0', url: 'https://creativecommons.org/publicdomain/zero/1.0/',
+    id: 'cc0', name: 'CC0 1.0 (Public Domain)', short: 'CC0', url: 'https://creativecommons.org/publicdomain/zero/1.0/',
     attribution: false, commercial: true, shareAlike: false,
     summary: 'No rights reserved. Use it for anything, no credit needed.',
   },
@@ -42,17 +42,17 @@ const LICENSES = [
     summary: 'Use it in personal and commercial projects without credit. Just don’t resell or re-upload the asset itself.',
   },
   {
-    id: 'cc-by', name: 'CC BY 4.0 — Attribution', short: 'CC BY', url: 'https://creativecommons.org/licenses/by/4.0/',
+    id: 'cc-by', name: 'CC BY 4.0 (Attribution)', short: 'CC BY', url: 'https://creativecommons.org/licenses/by/4.0/',
     attribution: true, commercial: true, shareAlike: false,
     summary: 'Use it for anything, including commercial work, as long as you credit the creator.',
   },
   {
-    id: 'cc-by-sa', name: 'CC BY-SA 4.0 — Attribution-ShareAlike', short: 'CC BY-SA', url: 'https://creativecommons.org/licenses/by-sa/4.0/',
+    id: 'cc-by-sa', name: 'CC BY-SA 4.0 (Attribution-ShareAlike)', short: 'CC BY-SA', url: 'https://creativecommons.org/licenses/by-sa/4.0/',
     attribution: true, commercial: true, shareAlike: true,
     summary: 'Credit the creator, and share modified versions of the asset under the same license.',
   },
   {
-    id: 'cc-by-nc', name: 'CC BY-NC 4.0 — Attribution-NonCommercial', short: 'CC BY-NC', url: 'https://creativecommons.org/licenses/by-nc/4.0/',
+    id: 'cc-by-nc', name: 'CC BY-NC 4.0 (Attribution-NonCommercial)', short: 'CC BY-NC', url: 'https://creativecommons.org/licenses/by-nc/4.0/',
     attribution: true, commercial: false, shareAlike: false,
     summary: 'Credit the creator. Personal and non-commercial projects only.',
   },
