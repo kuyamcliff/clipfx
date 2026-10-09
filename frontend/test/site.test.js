@@ -342,3 +342,21 @@ test('sitemaps list pages, every public asset and every account', opts, async ()
   assert.equal((await anon.get('/sitemaps/assets-0.xml')).status, 404);
   assert.match((await anon.get('/robots.txt')).text_, /Sitemap: .*\/sitemap\.xml/);
 });
+
+test('brand: logo, icons, manifest and default share image', opts, async () => {
+  const b = browser();
+  const home = (await b.get('/')).text_;
+  assert.match(home, /<img class="mark" src="\/static\/brand\/logo\.png"/);
+  assert.match(home, /rel="apple-touch-icon" href="\/static\/brand\/apple-touch-icon\.png"/);
+  assert.match(home, /property="og:image" content="http:\/\/127\.0\.0\.1:\d+\/static\/brand\/og\.png"/);
+  const ld = JSON.parse(/<script type="application\/ld\+json">(.*?)<\/script>/.exec(home)[1]);
+  assert.equal(ld[0]['@type'], 'Organization');
+  assert.match(ld[0].logo, /icon-512\.png$/);
+  for (const p of ['/static/brand/logo.png', '/static/brand/favicon-32.png', '/static/brand/og.png', '/static/brand/icon-512.png']) {
+    assert.equal((await b.get(p)).status, 200, p);
+  }
+  const manifest = await b.get('/manifest.webmanifest');
+  assert.equal(manifest.status, 200);
+  assert.equal(JSON.parse(manifest.text_).name, 'ClipFX');
+  assert.equal((await b.get('/favicon.ico')).headers.get('location'), '/static/brand/favicon.ico');
+});

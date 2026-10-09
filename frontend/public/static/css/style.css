@@ -28,11 +28,11 @@
   --text: #f2f1ec;
   --text-2: #bbbab3;
   --text-3: #8a8983;
-  --accent: #d4ff3f;
-  --accent-hover: #e2ff7a;
-  --on-accent: #11120c;
-  --accent-ink: #d4ff3f;
-  --accent-wash: rgb(212 255 63 / 0.08);
+  --accent: #014ffd;
+  --accent-hover: #2a6bff;
+  --on-accent: #ffffff;
+  --accent-ink: #38dcff;
+  --accent-wash: rgb(1 79 253 / 0.14);
   --ok: #62d592;
   --warn: #f3bb4f;
   --danger: #ff6d60;
@@ -59,10 +59,11 @@
     --text: #141414;
     --text-2: #44433e;
     --text-3: #6b6a63;
-    --accent: #c9f134;
-    --accent-hover: #bce322;
-    --accent-ink: #4b6c00;
-    --accent-wash: rgb(120 160 0 / 0.1);
+    --accent: #014ffd;
+    --accent-hover: #0040d6;
+    --on-accent: #ffffff;
+    --accent-ink: #0045e0;
+    --accent-wash: rgb(1 79 253 / 0.08);
     --ok: #23824a;
     --warn: #9a6400;
     --danger: #c4382a;
@@ -220,7 +221,7 @@ pre.code { font-size: 0.85rem; background: var(--surface); border: 1px solid var
 .topbar-in { display: flex; align-items: center; gap: 12px; height: var(--bar); }
 
 .brand { display: inline-flex; align-items: center; gap: 10px; flex: none; font-weight: 850; font-stretch: 78%; font-size: 1.3rem; letter-spacing: 0.02em; text-transform: uppercase; color: var(--text); }
-.mark { width: 28px; height: 20px; }
+.mark { width: auto; height: 34px; flex: none; }
 
 .topsearch { position: relative; flex: 1 1 auto; max-width: 460px; margin-left: 20px; display: flex; align-items: center; }
 .topsearch > .i { position: absolute; left: 12px; color: var(--text-3); pointer-events: none; }
@@ -941,7 +942,7 @@ a.pg-num:hover { background: var(--surface-2); color: var(--text); }
 .auth-alt { margin: 22px 0 0; text-align: center; color: var(--text-2); }
 .auth-card > .hint { text-align: center; margin-top: 14px; }
 .auth-aside { display: none; }
-.auth-aside .mark { width: 56px; height: 40px; color: var(--text); }
+.auth-aside .mark { height: 72px; }
 .perks { display: grid; gap: 22px; margin: 28px 0 0; padding: 0; list-style: none; }
 .perks li { display: flex; gap: 14px; color: var(--text-2); }
 .perks .i { width: 22px; height: 22px; margin-top: 2px; color: var(--accent-ink); }

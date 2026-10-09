@@ -63,7 +63,15 @@ function home(ctx, { stats, categories, fresh, trending }) {
       <a class="btn btn-accent btn-lg" href="/signup?next=/upload">Create a free account</a>
     </section>`}
   </div>`;
-  return layout(ctx, { body, og: { url: ctx.absolute('/') } });
+  const origin = ctx.absolute('');
+  const ldJson = [
+    { '@context': 'https://schema.org', '@type': 'Organization', name: ctx.config.siteName, url: ctx.absolute('/'), logo: ctx.absolute('/static/brand/icon-512.png') },
+    {
+      '@context': 'https://schema.org', '@type': 'WebSite', name: ctx.config.siteName, url: ctx.absolute('/'),
+      potentialAction: { '@type': 'SearchAction', target: `${origin}/browse?q={search_term_string}`, 'query-input': 'required name=search_term_string' },
+    },
+  ];
+  return layout(ctx, { body, og: { url: ctx.absolute('/') }, ldJson });
 }
 
 function filterLink(filters, changes) {

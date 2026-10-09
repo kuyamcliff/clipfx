@@ -1,3 +1,5 @@
+<p><img src="frontend/public/static/brand/logo-large.png" alt="ClipFX logo" width="120"></p>
+
 # ClipFX
 
 **A free, nonprofit library where video editors and motion designers share assets with each other.**

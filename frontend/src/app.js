@@ -68,7 +68,7 @@ function createFrontend(config, { log = console } = {}) {
 
   // On Vercel the CDN serves public/ directly; this covers local development.
   app.use(express.static(path.join(__dirname, '..', 'public'), { index: false, maxAge: config.production ? '1d' : 0 }));
-  app.get('/favicon.ico', (req, res) => res.redirect(301, '/static/favicon.svg'));
+  app.get('/favicon.ico', (req, res) => res.redirect(301, '/static/brand/favicon.ico'));
   app.get('/healthz', (req, res) => res.json({ ok: true }));
 
   // Cookies & CSRF token (double-submit: the API checks the same token).
