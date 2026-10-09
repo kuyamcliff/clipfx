@@ -53,5 +53,26 @@ module.exports = function metaRoutes(app, ctx) {
   });
 
   app.get('/api/stats', async (req, res) => res.ok({ stats: await models.assets.siteStats() }));
-  app.get('/api/sitemap', async (req, res) => res.ok({ assets: await models.assets.sitemap() }));
+  // Sitemap data. The website turns it into a sitemap index with one file per SITEMAP_PAGE entries.
+  const SITEMAP_PAGE = 45000;
+  const summary = (r) => ({ count: Number(r.count) || 0, lastmod: r.lastmod ? Number(r.lastmod) : null });
+  app.get('/api/sitemap', async (req, res) => res.ok({
+    pageSize: SITEMAP_PAGE,
+    assets: summary(await models.assets.sitemapSummary()),
+    users: summary(await models.users.sitemapSummary()),
+  }));
+  const sitemapPage = (req) => Math.max(1, Math.min(10000, Math.floor(Number(req.query.page)) || 1));
+  app.get('/api/sitemap/assets', async (req, res) => {
+    const rows = await models.assets.sitemapPage(sitemapPage(req), SITEMAP_PAGE);
+    res.ok({
+      items: rows.map((a) => ({
+        slug: a.slug, title: a.title, lastmod: Number(a.updated_at),
+        image: a.thumb_key ? storage.publicUrl(a.thumb_key, 'image') : null,
+      })),
+    });
+  });
+  app.get('/api/sitemap/users', async (req, res) => {
+    const rows = await models.users.sitemapPage(sitemapPage(req), SITEMAP_PAGE);
+    res.ok({ items: rows.map((u) => ({ username: u.username, lastmod: Number(u.last_upload || u.created_at) })) });
+  });
 };

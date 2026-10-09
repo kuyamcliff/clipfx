@@ -310,3 +310,35 @@ test('TikTok sign-up, then connecting Google from settings', opts, async () => {
   assert.equal(res.status, 303);
   assert.match((await b.get('/settings')).text_, /Set a password or connect another sign-in method/);
 });
+
+test('sitemaps list pages, every public asset and every account', opts, async () => {
+  const b = browser();
+  await b.signup('sam');
+  const pub = (await b.upload(fields({ title: 'Sitemap Public' }), { name: 'pub.zip', data: Buffer.from('PK pub') })).json_;
+  const hidden = (await b.upload(fields({ title: 'Sitemap Hidden', visibility: 'unlisted' }), { name: 'hid.zip', data: Buffer.from('PK hid') })).json_;
+
+  const anon = browser();
+  const index = await anon.get('/sitemap.xml');
+  assert.equal(index.status, 200);
+  assert.match(index.headers.get('content-type'), /xml/);
+  assert.match(index.text_, /<sitemapindex/);
+  for (const part of ['pages', 'assets-1', 'creators-1']) assert.match(index.text_, new RegExp(`/sitemaps/${part}\\.xml</loc>`));
+
+  const pages = (await anon.get('/sitemaps/pages.xml')).text_;
+  assert.match(pages, /\/browse\?category=overlays<\/loc>/);
+  assert.match(pages, /\/licenses<\/loc>/);
+  assert.doesNotMatch(pages, /\/login|\/signup/);
+
+  const assets = (await anon.get('/sitemaps/assets-1.xml')).text_;
+  assert.ok(assets.includes(`/a/${pub.slug}</loc>`), 'public asset listed');
+  assert.ok(!assets.includes(`/a/${hidden.slug}<`), 'unlisted asset left out');
+  assert.match(assets, /<lastmod>\d{4}-\d\d-\d\dT/);
+
+  const creators = (await anon.get('/sitemaps/creators-1.xml')).text_;
+  assert.match(creators, /\/u\/sam<\/loc>/);
+  assert.match(creators, /\/u\/alice<\/loc>/, 'accounts without uploads are listed too');
+
+  assert.equal((await anon.get('/sitemaps/assets-2.xml')).status, 404);
+  assert.equal((await anon.get('/sitemaps/assets-0.xml')).status, 404);
+  assert.match((await anon.get('/robots.txt')).text_, /Sitemap: .*\/sitemap\.xml/);
+});

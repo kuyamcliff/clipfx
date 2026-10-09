@@ -100,6 +100,8 @@ function createR2Storage(config) {
     },
     // kind: image | video | audio | download. Uses the matching public domain when configured,
     // otherwise a signed S3 API URL.
+    // A permanent public address (custom domain), or null when objects are only reachable by signed URL.
+    publicUrl: (key, kind) => (publicBase[kind] ? `${publicBase[kind]}/${key}` : null),
     async urlFor(key, { kind, contentType, filename, attachment = false, ttl = 3600, stable = false } = {}) {
       if (kind && publicBase[kind]) return `${publicBase[kind]}/${key}`;
       const cmd = new GetObjectCommand({
