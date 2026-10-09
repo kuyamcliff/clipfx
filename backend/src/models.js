@@ -166,6 +166,15 @@ function createModels(db, { storage }) {
     consume: (token) => run('DELETE FROM reset_tokens WHERE token_hash = ?', sha(String(token))),
   };
 
+  const oauth = {
+    user: (provider, subject) => one(`SELECT u.* FROM oauth_accounts o JOIN users u ON u.id = o.user_id
+      WHERE o.provider = ? AND o.subject = ?`, provider, String(subject)),
+    link: (provider, subject, userId) => run('INSERT INTO oauth_accounts (provider, subject, user_id, created_at) VALUES (?, ?, ?, ?)',
+      provider, String(subject), userId, Date.now()),
+    forUser: async (userId) => (await many('SELECT provider FROM oauth_accounts WHERE user_id = ? ORDER BY provider', userId)).map((r) => r.provider),
+    unlink: (provider, userId) => run('DELETE FROM oauth_accounts WHERE provider = ? AND user_id = ?', provider, userId),
+  };
+
   const uploads = {
     create: (v) => run(`INSERT INTO uploads (id, user_id, key, field, file_name, ext, size, content_type, multipart_id, part_size, created_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, v.id, v.userId, v.key, v.field, v.fileName, v.ext, v.size, v.contentType,
@@ -315,7 +324,7 @@ function createModels(db, { storage }) {
     resolveAllFor: (assetId, status, by) => run("UPDATE reports SET status = ?, resolved_at = ?, resolved_by = ? WHERE asset_id = ? AND status = 'open'", status, Date.now(), by, assetId),
   };
 
-  return { db, users, sessions, resets, uploads, assets, favorites, reports };
+  return { db, users, sessions, resets, oauth, uploads, assets, favorites, reports };
 }
 
 module.exports = { createModels, serialize, buildSearch, randomSlug, MEDIA_MIME, extOfKey };

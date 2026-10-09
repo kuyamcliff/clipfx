@@ -114,6 +114,7 @@ function createFrontend(config, { log = console } = {}) {
       req.ctx = {
         config: m.config, catalog: m.catalog, user: s.user || null, openReports: s.openReports || 0,
         csrf: req.cookies.csrf, flash, path: req.path, query: req.query,
+        asset: (p) => `${p}?v=${config.assetVersion}`,
         absolute: (p) => (/^https?:\/\//.test(p) ? p : `${origin}${p}`),
         decorate: (a) => decorate(a, m.catalog),
         decorateAll: (items) => decorateAll(items, m.catalog),
@@ -358,6 +359,49 @@ function createFrontend(config, { log = console } = {}) {
     return res.view(views.login, { values: { login: req.body.login }, error: r.data.error, next }, r.status);
   });
 
+  // Sign in with Google or TikTok. The API builds the provider URL and exchanges the code; this side
+  // keeps state + verifier in a short-lived cookie and checks them when the visitor comes back.
+  const OAUTH_COOKIE = 'oauth';
+  const PROVIDERS = { google: 'Google', tiktok: 'TikTok' };
+  const knownProvider = (req, res, next) => (Object.hasOwn(PROVIDERS, req.params.provider) ? next() : next('route'));
+
+  app.get('/auth/:provider', knownProvider, async (req, res) => {
+    const name = req.params.provider;
+    const r = await req.api('GET', `/api/auth/${name}/start`);
+    if (r.status !== 200) {
+      res.flash('error', r.data.error || `${PROVIDERS[name]} sign-in isn’t available right now.`);
+      return res.redirect('/login');
+    }
+    const value = Buffer.from(JSON.stringify({ provider: name, state: r.data.state, verifier: r.data.verifier, next: safeNext(req.query.next) })).toString('base64url');
+    res.cookie(OAUTH_COOKIE, value, { ...cookieBase, maxAge: 10 * 60 * 1000 });
+    res.setHeader('Cache-Control', 'no-store');
+    return res.redirect(r.data.url);
+  });
+
+  app.get('/auth/:provider/callback', knownProvider, async (req, res) => {
+    const name = req.params.provider;
+    const label = PROVIDERS[name];
+    let saved = null;
+    try { saved = JSON.parse(Buffer.from(req.cookies[OAUTH_COOKIE] || '', 'base64url').toString()); } catch { saved = null; }
+    res.clearCookie(OAUTH_COOKIE, cookieBase);
+    const ctx = await req.context();
+    const back = (message) => { res.flash('error', message); return res.redirect(ctx.user ? '/settings#connections' : '/login'); };
+    if (req.query.error) return back(req.query.error === 'access_denied' ? `${label} sign-in was cancelled.` : `${label} sign-in didn’t work. Please try again.`);
+    if (!saved || saved.provider !== name || !safeEqual(req.query.state, saved.state) || !req.query.code) return back(`${label} sign-in expired. Please try again.`);
+    const r = await req.api('POST', `/api/auth/${name}`, { code: String(req.query.code), verifier: saved.verifier });
+    if (r.status === 200 || r.status === 201) {
+      res.flash('success', r.data.message);
+      if (r.data.linked) return res.redirect('/settings#connections');
+      return res.redirect(safeNext(saved.next) || (r.data.created ? '/settings' : '/'));
+    }
+    if (r.status >= 500 || r.status === 429) return res.apiError(r);
+    return back(r.data.error || `${label} sign-in didn’t work. Please try again.`);
+  });
+
+  app.post('/settings/connections/:provider/remove', requireUser, knownProvider, formAction({
+    api: (req) => `/api/me/connections/${encodeURIComponent(req.params.provider)}/remove`, body: () => ({}), redirect: '/settings#connections',
+  }));
+
   app.post('/logout', formAction({ api: '/api/auth/logout', body: () => ({}), redirect: '/' }));
 
   const renderReset = async (req, res, { error = null, status = 200 } = {}) => {
@@ -428,7 +472,7 @@ function createFrontend(config, { log = console } = {}) {
     const origin = config.publicUrl || `${req.protocol}://${req.get('host')}`;
     res.type('text/plain').send([
       'User-agent: *', 'Disallow: /admin', 'Disallow: /dashboard', 'Disallow: /settings', 'Disallow: /saved',
-      'Disallow: /upload', 'Disallow: /api/', 'Disallow: /*/download', 'Disallow: /*/report', `Sitemap: ${origin}/sitemap.xml`, '',
+      'Disallow: /upload', 'Disallow: /api/', 'Disallow: /auth/', 'Disallow: /*/download', 'Disallow: /*/report', `Sitemap: ${origin}/sitemap.xml`, '',
     ].join('\n'));
   });
 

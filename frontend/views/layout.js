@@ -31,7 +31,7 @@ function layout(ctx, { title, description, body, og = {}, noindex = false }) {
   <meta name="theme-color" content="#f3f2ee" media="(prefers-color-scheme: light)">
   <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
   <link rel="preload" href="/static/fonts/archivo.woff2" as="font" type="font/woff2" crossorigin>
-  <link rel="stylesheet" href="/static/css/style.css">
+  <link rel="stylesheet" href="${ctx.asset('/static/css/style.css')}">
   <meta property="og:site_name" content="${config.siteName}">
   <meta property="og:title" content="${og.title || title || config.siteName}">
   <meta property="og:description" content="${og.description || desc}">
@@ -39,7 +39,7 @@ function layout(ctx, { title, description, body, og = {}, noindex = false }) {
   ${og.url ? html`<meta property="og:url" content="${og.url}"><link rel="canonical" href="${og.url}">` : ''}
   ${og.image ? html`<meta property="og:image" content="${og.image}"><meta name="twitter:card" content="summary_large_image">` : raw('<meta name="twitter:card" content="summary">')}
   ${og.video ? html`<meta property="og:video" content="${og.video}"><meta property="og:video:type" content="video/mp4">` : ''}
-  <script src="/static/js/app.js" defer></script>
+  <script src="${ctx.asset('/static/js/app.js')}" defer></script>
 </head>
 <body>
   <a class="skip" href="#main">Skip to content</a>

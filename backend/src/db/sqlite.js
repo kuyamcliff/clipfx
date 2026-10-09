@@ -129,6 +129,16 @@ CREATE TABLE IF NOT EXISTS uploads (
 CREATE INDEX IF NOT EXISTS uploads_user ON uploads(user_id);
 CREATE INDEX IF NOT EXISTS uploads_created ON uploads(created_at);
 
+-- Sign-in through other providers (Google). One row per linked account.
+CREATE TABLE IF NOT EXISTS oauth_accounts (
+  provider TEXT NOT NULL,
+  subject TEXT NOT NULL,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (provider, subject)
+);
+CREATE INDEX IF NOT EXISTS oauth_accounts_user ON oauth_accounts(user_id);
+
 -- Files removed for copyright / abuse can't simply be uploaded again.
 CREATE TABLE IF NOT EXISTS blocked_hashes (
   sha256 TEXT PRIMARY KEY,

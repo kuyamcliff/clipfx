@@ -15,6 +15,7 @@ const quiet = { log() {}, warn() {}, error() {} };
 let api;
 let site;
 let dataDir;
+let googleToken;
 const listen = (app) => new Promise((resolve) => { const s = app.listen(0, '127.0.0.1', () => resolve(s)); });
 
 before(async () => {
@@ -22,7 +23,20 @@ before(async () => {
   const { loadConfig: apiConfig } = require(path.join(backendDir, 'src', 'config'));
   const { createApp } = require(path.join(backendDir, 'src', 'app'));
   dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'clipfx-site-test-'));
-  api = await createApp(apiConfig({ dataDir, storage: 'local', rateLimits: false, logRequests: false, mediaProcessing: false, internalSecret: 's3cret' }), { log: quiet });
+  // Stand-in for Google's token endpoint: answers every code with an ID token for one account.
+  googleToken = require('node:http').createServer((req, res) => {
+    const b64 = (o) => Buffer.from(JSON.stringify(o)).toString('base64url');
+    const claims = { iss: 'https://accounts.google.com', aud: 'site-test-client', exp: Math.floor(Date.now() / 1000) + 600, sub: 'g-site', email: 'gina@example.org', email_verified: true, name: 'Gina Grade' };
+    res.writeHead(200, { 'content-type': 'application/json' });
+    if (req.url.startsWith('/tiktok/token')) return res.end(JSON.stringify({ access_token: 't', open_id: 'tt-site' }));
+    if (req.url.startsWith('/tiktok/user')) return res.end(JSON.stringify({ data: { user: { display_name: 'Tia Cuts' } } }));
+    return res.end(JSON.stringify({ id_token: `${b64({ alg: 'RS256' })}.${b64(claims)}.sig` }));
+  });
+  await new Promise((r) => googleToken.listen(0, '127.0.0.1', r));
+  const google = { clientId: 'site-test-client', clientSecret: 'shh', authUrl: 'https://accounts.google.com/o/oauth2/v2/auth', tokenUrl: `http://127.0.0.1:${googleToken.address().port}/token` };
+  const fake = `http://127.0.0.1:${googleToken.address().port}`;
+  const tiktok = { clientKey: 'awsite', clientSecret: 'shh', authUrl: 'https://www.tiktok.com/v2/auth/authorize/', tokenUrl: `${fake}/tiktok/token`, userUrl: `${fake}/tiktok/user` };
+  api = await createApp(apiConfig({ dataDir, storage: 'local', rateLimits: false, logRequests: false, mediaProcessing: false, internalSecret: 's3cret', google, tiktok }), { log: quiet });
   api.server = await listen(api.app);
   const backendUrl = `http://127.0.0.1:${api.server.address().port}`;
   site = { server: await listen(createFrontend(loadConfig({ backendUrl, internalSecret: 's3cret', cookieSecure: false, logRequests: false }), { log: quiet })) };
@@ -34,6 +48,7 @@ after(async () => {
   if (!haveBackend) return;
   await new Promise((r) => site.server.close(r));
   await new Promise((r) => api.server.close(r));
+  googleToken.close();
   await api.media.idle();
   await api.close();
   fs.rmSync(dataDir, { recursive: true, force: true });
@@ -97,6 +112,11 @@ test('pages render with security headers', opts, async () => {
   assert.equal((await b.get('/nope')).status, 404);
   assert.equal((await b.get('/upload')).status, 302);
   assert.equal((await b.get('/static/css/style.css')).status, 200);
+  const home = (await b.get('/')).text_;
+  const css = /href="(\/static\/css\/style\.css\?v=[\w-]+)"/.exec(home);
+  assert.ok(css, 'stylesheet URL carries a version so caches pick up new deploys');
+  assert.equal((await b.get(css[1])).status, 200);
+  assert.match(home, /src="\/static\/js\/app\.js\?v=[\w-]+"/);
   assert.match((await b.get('/robots.txt')).text_, /Sitemap:/);
 });
 
@@ -233,4 +253,60 @@ test('login errors and logout', opts, async () => {
   res = await b.post('/logout', { form: {} });
   assert.equal(res.status, 303);
   assert.ok(!b.jar.has('sid'));
+});
+
+test('continue with Google: redirect, state check, callback', opts, async () => {
+  const b = browser();
+  assert.match((await b.get('/login')).text_, /href="\/auth\/google"/);
+  let res = await b.get('/auth/google?next=/upload');
+  assert.equal(res.status, 302);
+  const to = new URL(res.headers.get('location'));
+  assert.equal(to.host, 'accounts.google.com');
+  const state = to.searchParams.get('state');
+  assert.ok(b.jar.has('oauth'));
+
+  // A wrong state is refused and the flow starts over.
+  const other = browser();
+  await other.get('/auth/google');
+  res = await other.get(`/auth/google/callback?code=abc&state=${encodeURIComponent(state)}`);
+  assert.equal(res.headers.get('location'), '/login');
+
+  res = await b.get(`/auth/google/callback?code=abc&state=${encodeURIComponent(state)}`);
+  assert.equal(res.status, 302);
+  assert.equal(res.headers.get('location'), '/upload');
+  assert.ok(!b.jar.has('oauth'), 'state cookie is single use');
+  const settings = await b.get('/settings');
+  assert.equal(settings.status, 200);
+  assert.match(settings.text_, /You don't have a password yet/);
+  assert.match(settings.text_, /Sign-in methods/);
+
+  res = await browser().get('/auth/google/callback?error=access_denied');
+  assert.equal(res.headers.get('location'), '/login');
+});
+
+test('TikTok sign-up, then connecting Google from settings', opts, async () => {
+  const b = browser();
+  assert.match((await b.get('/signup')).text_, /href="\/auth\/tiktok"/);
+  let res = await b.get('/auth/tiktok');
+  const to = new URL(res.headers.get('location'));
+  assert.equal(to.host, 'www.tiktok.com');
+  res = await b.get(`/auth/tiktok/callback?code=abc&state=${encodeURIComponent(to.searchParams.get('state'))}`);
+  assert.equal(res.headers.get('location'), '/settings');
+  let settings = (await b.get('/settings')).text_;
+  assert.match(settings, /Tia Cuts/);
+  assert.match(settings, /action="\/settings\/connections\/tiktok\/remove"/);
+  assert.match(settings, /href="\/auth\/google\?next=\/settings"/);
+
+  // Google is already used by another account (from the earlier test), so connecting it is refused.
+  res = await b.get('/auth/google?next=/settings');
+  const g = new URL(res.headers.get('location'));
+  res = await b.get(`/auth/google/callback?code=abc&state=${encodeURIComponent(g.searchParams.get('state'))}`);
+  assert.equal(res.headers.get('location'), '/settings#connections');
+  settings = (await b.get('/settings')).text_;
+  assert.match(settings, /already used by another/);
+
+  // Only sign-in method on a passwordless account: disconnect is refused with a message.
+  res = await b.post('/settings/connections/tiktok/remove', { form: { back: '/settings' } });
+  assert.equal(res.status, 303);
+  assert.match((await b.get('/settings')).text_, /Set a password or connect another sign-in method/);
 });

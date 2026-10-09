@@ -8,7 +8,7 @@ const { Pool, types } = require('pg');
 types.setTypeParser(20, (v) => Number(v));
 types.setTypeParser(1700, (v) => Number(v));
 
-const TABLES = ['users', 'sessions', 'reset_tokens', 'assets', 'daily_downloads', 'favorites', 'reports', 'uploads', 'blocked_hashes'];
+const TABLES = ['users', 'sessions', 'reset_tokens', 'assets', 'daily_downloads', 'favorites', 'reports', 'uploads', 'blocked_hashes', 'oauth_accounts'];
 
 const schemaSql = (SCHEMA_NAME) => `
 CREATE SCHEMA IF NOT EXISTS ${SCHEMA_NAME};
@@ -123,6 +123,16 @@ CREATE TABLE IF NOT EXISTS uploads (
 );
 CREATE INDEX IF NOT EXISTS uploads_user ON uploads(user_id);
 CREATE INDEX IF NOT EXISTS uploads_created ON uploads(created_at);
+
+-- Sign-in through other providers (Google). One row per linked account.
+CREATE TABLE IF NOT EXISTS oauth_accounts (
+  provider TEXT NOT NULL,
+  subject TEXT NOT NULL,
+  user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at BIGINT NOT NULL,
+  PRIMARY KEY (provider, subject)
+);
+CREATE INDEX IF NOT EXISTS oauth_accounts_user ON oauth_accounts(user_id);
 
 CREATE TABLE IF NOT EXISTS blocked_hashes (
   sha256 TEXT PRIMARY KEY,

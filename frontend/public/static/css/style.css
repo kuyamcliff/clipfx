@@ -918,6 +918,20 @@ a.pg-num:hover { background: var(--surface-2); color: var(--text); }
 .progress-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 8px; font-family: var(--mono); font-size: 0.78rem; color: var(--text-2); }
 .progress-row .textbtn { padding: 4px 0; font-family: var(--font); }
 
+.oauth { display: grid; gap: 10px; }
+.btn-oauth { gap: 12px; background: var(--raised); }
+.conns { margin: 0; padding: 0; list-style: none; }
+.conn { display: flex; align-items: center; gap: 14px; padding: 14px 0; border-top: 1px solid var(--line); }
+.conn:first-child { border-top: 0; padding-top: 0; }
+.conn-mark { display: grid; place-items: center; flex: none; width: 40px; height: 40px; border-radius: 10px; background: var(--raised); border: 1px solid var(--line); }
+.conn-main { flex: 1; min-width: 0; }
+.conn-main strong { display: block; }
+.conn-main span { display: block; font-size: 0.86rem; color: var(--text-3); }
+.conn form { margin: 0; }
+.g-mark { width: 20px; height: 20px; flex: none; }
+.divider { display: flex; align-items: center; gap: 14px; margin: 22px 0; color: var(--text-3); font-size: 0.82rem; text-transform: uppercase; letter-spacing: 0.08em; font-family: var(--mono); }
+.divider::before, .divider::after { content: ""; flex: 1; height: 1px; background: var(--line-strong); }
+
 /* ---- Auth ----------------------------------------------------------------------------------------- */
 
 .auth { display: grid; justify-content: center; gap: 48px; padding-top: 32px; padding-bottom: 24px; }
@@ -934,7 +948,8 @@ a.pg-num:hover { background: var(--surface-2); color: var(--text); }
 .perks strong { display: block; color: var(--text); }
 @media (min-width: 720px) { .auth { padding-top: 56px; } .auth-card { padding: 36px; } }
 @media (min-width: 960px) {
-  .auth { grid-template-columns: minmax(0, 460px) minmax(0, 340px); align-items: center; }
+  .auth:has(> .auth-aside) { grid-template-columns: minmax(0, 460px) minmax(0, 340px); align-items: center; }
+  .auth-card { min-width: 460px; }
   .auth-aside { display: block; }
 }
 @media (max-width: 719px) { .auth { justify-content: stretch; } .auth-card { max-width: none; } }
