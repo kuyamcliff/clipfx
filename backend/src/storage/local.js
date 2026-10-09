@@ -152,6 +152,7 @@ function createLocalStorage(config) {
       if (key) await fsp.unlink(abs(key)).catch(() => {});
     },
     // stable: URL stays identical for a few hours so browsers can cache thumbnails.
+    publicUrl: () => null,
     async urlFor(key, { contentType, filename, attachment = false, ttl = 3600, stable = false } = {}) {
       const now = Math.floor(Date.now() / 1000);
       const exp = stable ? Math.floor(now / STABLE_WINDOW) * STABLE_WINDOW + 4 * STABLE_WINDOW : now + ttl;

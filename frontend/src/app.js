@@ -68,7 +68,7 @@ function createFrontend(config, { log = console } = {}) {
 
   // On Vercel the CDN serves public/ directly; this covers local development.
   app.use(express.static(path.join(__dirname, '..', 'public'), { index: false, maxAge: config.production ? '1d' : 0 }));
-  app.get('/favicon.ico', (req, res) => res.redirect(301, '/static/favicon.svg'));
+  app.get('/favicon.ico', (req, res) => res.redirect(301, '/static/brand/favicon.ico'));
   app.get('/healthz', (req, res) => res.json({ ok: true }));
 
   // Cookies & CSRF token (double-submit: the API checks the same token).
@@ -476,13 +476,65 @@ function createFrontend(config, { log = console } = {}) {
     ].join('\n'));
   });
 
+  // ---- Sitemaps ---------------------------------------------------------------------------
+  // /sitemap.xml is an index: one file for the site's own pages, then every public asset and every
+  // account in files of up to 45,000 links. Built on request, so new uploads and accounts show up
+  // as soon as they exist.
+  const xmlEsc = (s) => String(s).replace(/[<>&'"]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', "'": '&apos;', '"': '&quot;' }[c]));
+  const isoDate = (ms) => (ms ? new Date(Number(ms)).toISOString() : '');
+  const siteOrigin = (req) => config.publicUrl || `${req.protocol}://${req.get('host')}`;
+  const sendXml = (res, body) => {
+    res.setHeader('Cache-Control', 'public, max-age=3600');
+    return res.type('application/xml').send(`<?xml version="1.0" encoding="UTF-8"?>\n${body}`);
+  };
+  const urlEntry = (loc, lastmod, extra = '') => `<url><loc>${xmlEsc(loc)}</loc>${lastmod ? `<lastmod>${isoDate(lastmod)}</lastmod>` : ''}${extra}</url>`;
+  const pageCount = (n, size) => Math.ceil(n / size);
+
   app.get('/sitemap.xml', async (req, res) => {
-    const origin = config.publicUrl || `${req.protocol}://${req.get('host')}`;
+    const origin = siteOrigin(req);
     const r = await req.api('GET', '/api/sitemap');
-    const xmlEsc = (s) => String(s).replace(/[<>&'"]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', "'": '&apos;', '"': '&quot;' }[c]));
-    const urls = ['/', '/browse', '/about', '/licenses', '/guidelines'].map((p) => `<url><loc>${xmlEsc(origin + p)}</loc></url>`)
-      .concat(((r.data && r.data.assets) || []).map((a) => `<url><loc>${xmlEsc(`${origin}/a/${a.slug}`)}</loc><lastmod>${new Date(a.updated_at).toISOString()}</lastmod></url>`));
-    res.type('application/xml').send(`<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${urls.join('')}</urlset>`);
+    if (r.status !== 200) return res.status(503).type('text/plain').send('Sitemap unavailable, try again later.');
+    const { pageSize, assets, users } = r.data;
+    const maps = [[`${origin}/sitemaps/pages.xml`, assets.lastmod]];
+    for (let i = 1; i <= pageCount(assets.count, pageSize); i++) maps.push([`${origin}/sitemaps/assets-${i}.xml`, assets.lastmod]);
+    for (let i = 1; i <= pageCount(users.count, pageSize); i++) maps.push([`${origin}/sitemaps/creators-${i}.xml`, Math.max(users.lastmod || 0, assets.lastmod || 0)]);
+    return sendXml(res, `<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${maps.map(([loc, lastmod]) => `<sitemap><loc>${xmlEsc(loc)}</loc>${lastmod ? `<lastmod>${isoDate(lastmod)}</lastmod>` : ''}</sitemap>`).join('')}</sitemapindex>`);
+  });
+
+  // Home, browse, every category, and the info pages. Login, signup and account pages are noindex, so they're left out.
+  app.get('/sitemaps/pages.xml', async (req, res) => {
+    const origin = siteOrigin(req);
+    const m = await getMeta(req);
+    const paths = ['/', '/browse', ...m.catalog.categories.map((c) => `/browse?category=${encodeURIComponent(c.id)}`), ...STATIC_PAGES.map((p) => `/${p}`)];
+    return sendXml(res, `<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${paths.map((p) => urlEntry(origin + p)).join('')}</urlset>`);
+  });
+
+  const sitemapPageParam = (req) => {
+    const n = Number(req.params.n);
+    return Number.isInteger(n) && n >= 1 && n <= 10000 ? n : null;
+  };
+
+  app.get('/sitemaps/assets-:n.xml', async (req, res) => {
+    const n = sitemapPageParam(req);
+    if (!n) return res.fail(404, 'Page not found', 'No such sitemap.');
+    const origin = siteOrigin(req);
+    const r = await req.api('GET', `/api/sitemap/assets?page=${n}`);
+    if (r.status !== 200) return res.status(503).type('text/plain').send('Sitemap unavailable, try again later.');
+    if (!r.data.items.length && n > 1) return res.fail(404, 'Page not found', 'No such sitemap.');
+    const entries = r.data.items.map((a) => urlEntry(`${origin}/a/${a.slug}`, a.lastmod,
+      a.image ? `<image:image><image:loc>${xmlEsc(a.image)}</image:loc></image:image>` : ''));
+    return sendXml(res, `<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">${entries.join('')}</urlset>`);
+  });
+
+  app.get('/sitemaps/creators-:n.xml', async (req, res) => {
+    const n = sitemapPageParam(req);
+    if (!n) return res.fail(404, 'Page not found', 'No such sitemap.');
+    const origin = siteOrigin(req);
+    const r = await req.api('GET', `/api/sitemap/users?page=${n}`);
+    if (r.status !== 200) return res.status(503).type('text/plain').send('Sitemap unavailable, try again later.');
+    if (!r.data.items.length && n > 1) return res.fail(404, 'Page not found', 'No such sitemap.');
+    const entries = r.data.items.map((u) => urlEntry(`${origin}/u/${encodeURIComponent(u.username)}`, u.lastmod));
+    return sendXml(res, `<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${entries.join('')}</urlset>`);
   });
 
   app.use((req, res) => res.fail(404, 'Page not found', 'We couldn’t find that page. It may have been moved or deleted.'));

@@ -39,8 +39,8 @@ const ICONS = {
 
 const icon = (name, cls = '') => raw(`<svg class="i ${cls}" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">${ICONS[name] || ICONS.box}</svg>`);
 
-// The ClipFX mark: an in point and an out point around a clip.
-const mark = () => raw('<svg class="mark" viewBox="0 0 28 20" aria-hidden="true" focusable="false"><path d="M5 2H1.5v16H5" fill="none" stroke="currentColor" stroke-width="2.5"/><path d="M23 2h3.5v16H23" fill="none" stroke="currentColor" stroke-width="2.5"/><rect x="8" y="5.5" width="12" height="9" fill="var(--accent)"/></svg>');
+// The ClipFX logo. Decorative wherever the name is written next to it, so alt stays empty.
+const mark = () => raw('<img class="mark" src="/static/brand/logo.png" alt="" width="142" height="102" decoding="async">');
 
 // Inline style that hands a category's hue to CSS (label colors, placeholders).
 const hue = (category) => raw(`style="--h:${Number(category && category.hue) || 0}"`);

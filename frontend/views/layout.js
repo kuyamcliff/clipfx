@@ -2,7 +2,7 @@
 const { html, raw } = require('../src/html');
 const { icon, mark, csrfField } = require('./components');
 
-function layout(ctx, { title, description, body, og = {}, noindex = false }) {
+function layout(ctx, { title, description, body, og = {}, noindex = false, ldJson = null }) {
   const { config, user, flash } = ctx;
   const fullTitle = title ? `${title} | ${config.siteName}` : `${config.siteName}: free assets for video editors`;
   const desc = description || 'Free footage, transitions, LUTs, overlays, templates and sound effects, shared by video editors and motion designers. Nonprofit, no ads.';
@@ -29,7 +29,10 @@ function layout(ctx, { title, description, body, og = {}, noindex = false }) {
   <meta name="color-scheme" content="dark light">
   <meta name="theme-color" content="#0f0f10" media="(prefers-color-scheme: dark)">
   <meta name="theme-color" content="#f3f2ee" media="(prefers-color-scheme: light)">
-  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="/static/brand/favicon-32.png" type="image/png" sizes="32x32">
+  <link rel="icon" href="/static/brand/favicon-64.png" type="image/png" sizes="64x64">
+  <link rel="apple-touch-icon" href="/static/brand/apple-touch-icon.png">
+  <link rel="manifest" href="/manifest.webmanifest">
   <link rel="preload" href="/static/fonts/archivo.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="${ctx.asset('/static/css/style.css')}">
   <meta property="og:site_name" content="${config.siteName}">
@@ -37,7 +40,11 @@ function layout(ctx, { title, description, body, og = {}, noindex = false }) {
   <meta property="og:description" content="${og.description || desc}">
   <meta property="og:type" content="${og.type || 'website'}">
   ${og.url ? html`<meta property="og:url" content="${og.url}"><link rel="canonical" href="${og.url}">` : ''}
-  ${og.image ? html`<meta property="og:image" content="${og.image}"><meta name="twitter:card" content="summary_large_image">` : raw('<meta name="twitter:card" content="summary">')}
+  <meta property="og:image" content="${og.image || ctx.absolute('/static/brand/og.png')}">
+  ${og.image ? '' : raw('<meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">')}
+  <meta property="og:image:alt" content="${og.image ? og.title || title || config.siteName : `${config.siteName} logo`}">
+  <meta name="twitter:card" content="summary_large_image">
+  ${ldJson ? raw(`<script type="application/ld+json">${JSON.stringify(ldJson).replace(/</g, '\\u003c')}</script>`) : ''}
   ${og.video ? html`<meta property="og:video" content="${og.video}"><meta property="og:video:type" content="video/mp4">` : ''}
   <script src="${ctx.asset('/static/js/app.js')}" defer></script>
 </head>

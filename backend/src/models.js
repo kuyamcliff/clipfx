@@ -129,6 +129,11 @@ function createModels(db, { storage }) {
     // Includes uploads in flight, so quota can't be dodged by starting many uploads at once.
     storageUsed: (id) => num(`SELECT (SELECT COALESCE(SUM(file_size), 0) FROM assets WHERE user_id = ?)
       + (SELECT COALESCE(SUM(size), 0) FROM uploads WHERE user_id = ?) AS n`, id, id),
+    sitemapSummary: () => one('SELECT COUNT(*) AS count, MAX(created_at) AS lastmod FROM users WHERE banned = 0'),
+    // Last change for a profile: its newest public upload, or when the account was made.
+    sitemapPage: (page, size) => many(`SELECT u.username, u.created_at,
+        (SELECT MAX(a.updated_at) FROM assets a WHERE a.user_id = u.id AND a.status = 'active' AND a.visibility = 'public') AS last_upload
+      FROM users u WHERE u.banned = 0 ORDER BY u.id LIMIT ? OFFSET ?`, size, (page - 1) * size),
     search(q, limit = 50) {
       const like = `%${String(q || '').toLowerCase().replace(/[%_]/g, '')}%`;
       return many(`SELECT u.*, (SELECT COUNT(*) FROM assets a WHERE a.user_id = u.id) AS asset_count
@@ -297,8 +302,11 @@ function createModels(db, { storage }) {
       return Object.fromEntries(Object.entries(r).map(([k, v]) => [k, Number(v)]));
     },
 
-    sitemap: () => many(`SELECT a.slug, a.updated_at FROM assets a JOIN users u ON u.id = a.user_id
-      WHERE a.status = 'active' AND a.visibility = 'public' AND u.banned = 0 ORDER BY a.created_at DESC LIMIT 45000`),
+    // Sitemap pages are ordered by id, so a page's contents only change at the end as uploads arrive.
+    sitemapSummary: () => one(`SELECT COUNT(*) AS count, MAX(a.updated_at) AS lastmod FROM assets a JOIN users u ON u.id = a.user_id
+      WHERE a.status = 'active' AND a.visibility = 'public' AND u.banned = 0`),
+    sitemapPage: (page, size) => many(`SELECT a.slug, a.title, a.updated_at, a.thumb_key FROM assets a JOIN users u ON u.id = a.user_id
+      WHERE a.status = 'active' AND a.visibility = 'public' AND u.banned = 0 ORDER BY a.id LIMIT ? OFFSET ?`, size, (page - 1) * size),
   };
 
   const favorites = {
