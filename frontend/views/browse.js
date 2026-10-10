@@ -2,7 +2,7 @@
 const { html, raw, formatCount, formatBytes, formatDate, timeAgo, richText } = require('../src/html');
 const { layout } = require('./layout');
 const {
-  icon, hue, avatar, assetGrid, pagination, emptyState, meter, pageHref, sectionHead, media, shareFlags,
+  icon, hue, categoryPhoto, avatar, assetGrid, pagination, emptyState, meter, pageHref, sectionHead, media, shareFlags,
 } = require('./components');
 
 const SUGGESTIONS = ['light leak', 'whoosh', 'film grain', 'lower third', 'glitch', 'LUT'];
@@ -10,6 +10,7 @@ const SUGGESTIONS = ['light leak', 'whoosh', 'film grain', 'lower third', 'glitc
 function categoryGrid(categories) {
   return html`<div class="cats">
     ${categories.map((c) => html`<a class="cat" href="/browse?category=${c.id}" ${hue(c)} data-reveal>
+      <img class="cat-img" src="${categoryPhoto(c)}" alt="" width="640" height="400" loading="lazy" decoding="async">
       <span class="cat-icon">${icon(c.icon)}</span>
       <span class="cat-text"><span class="cat-name">${c.name}</span><span class="cat-count">${formatCount(c.count)} ${c.count === 1 ? 'file' : 'files'}</span></span>
     </a>`)}
@@ -35,7 +36,7 @@ const FEATURES = [
 function home(ctx, { stats, categories, fresh, trending, creators }) {
   const body = html`
   <section class="hero">
-    <div class="hero-glow" aria-hidden="true"><span></span><span></span></div>
+    <div class="hero-media" aria-hidden="true"><img src="/static/img/hero.webp" alt="" width="1920" height="1080" fetchpriority="high" decoding="async"></div>
     <div class="container hero-in">
       <h1 class="hero-title">Find all resources for <span class="grad">video editing</span></h1>
       <p class="hero-sub">Stock footage, transitions, LUTs, overlays, templates, sound effects and music, shared by editors and free to download.</p>
@@ -81,6 +82,7 @@ function home(ctx, { stats, categories, fresh, trending, creators }) {
     </section>
 
     <section class="cta" data-reveal>
+      <img class="cta-img" src="/static/img/cta.webp" alt="" width="1280" height="560" loading="lazy" decoding="async">
       <div>
         <h2>Made something useful?</h2>
         <p>A LUT that nailed a look, a pack of whooshes, a title template. Upload it, pick a license and share one link.</p>
@@ -141,7 +143,8 @@ function browse(ctx, { filters: f, result, sorts, categories }) {
 
   const body = html`
   <div class="container">
-    <header class="pagehead" ${cat ? hue(cat) : ''}>
+    <header class="pagehead${cat ? ' has-photo' : ''}" ${cat ? hue(cat) : ''}>
+      ${cat ? html`<img class="pagehead-img" src="${categoryPhoto(cat)}" alt="" width="640" height="400" decoding="async">` : ''}
       <div>
         ${cat ? html`<span class="pagehead-icon">${icon(cat.icon)}</span>` : ''}
         <h1>${heading}</h1>

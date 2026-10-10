@@ -89,6 +89,10 @@ const mark = () => raw('<img class="mark" src="/static/brand/logo.png" alt="" wi
 // Inline style that hands a category's hue to CSS.
 const hue = (category) => raw(`style="--h:${Number(category && category.hue) || 220}"`);
 
+// Background photo for each category (CC0, see the About page). Unknown ids fall back to "other".
+const CATEGORY_PHOTOS = new Set(['footage', 'transitions', 'overlays', 'luts', 'templates', 'motion', 'presets', 'sfx', 'music', 'textures', '3d', 'other']);
+const categoryPhoto = (category) => `/static/img/cat-${CATEGORY_PHOTOS.has(category && category.id) ? category.id : 'other'}.webp`;
+
 // A person's photo, or their initials on a color picked from their name.
 function avatar(user, size = '') {
   const name = user.display_name || user.username || '?';
@@ -216,6 +220,6 @@ function sectionHead(title, link, extra = '', sub = '') {
 }
 
 module.exports = {
-  ICONS, icon, mark, hue, avatar, csrfField, assetCard, assetGrid, pagination, pageHref, emptyState, notice,
+  ICONS, icon, mark, hue, categoryPhoto, avatar, csrfField, assetCard, assetGrid, pagination, pageHref, emptyState, notice,
   fieldError, invalid, meter, specLine, media, sectionHead, byline, shareFlags,
 };

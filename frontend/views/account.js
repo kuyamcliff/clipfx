@@ -6,7 +6,8 @@ const { icon, mark, avatar, csrfField, fieldError, invalid, notice } = require('
 function authShell(ctx, title, inner) {
   return layout(ctx, {
     title, noindex: true, bodyClass: 'is-auth',
-    body: html`<div class="container auth">
+    body: html`<div class="auth-bg" aria-hidden="true"><img src="/static/img/auth.webp" alt="" width="1600" height="1000" decoding="async"></div>
+    <div class="container auth">
       <div class="auth-card" data-reveal>
         <a class="auth-logo" href="/" aria-label="${ctx.config.siteName} home">${mark()}</a>
         ${inner}

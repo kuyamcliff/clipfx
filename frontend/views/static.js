@@ -23,7 +23,9 @@ const PAGES = {
       <h2>Who owns what</h2>
       <p>Uploaders keep the rights to their work. They pick the license, and each asset page spells out what you can do with it. The <a href="/licenses">licenses page</a> compares them.</p>
       <h2>Helping out</h2>
-      <p>Upload something useful, <a href="/guidelines">report</a> anything that breaks the rules, send a pull request, or get in touch at ${contact(c)}.</p>`,
+      <p>Upload something useful, <a href="/guidelines">report</a> anything that breaks the rules, send a pull request, or get in touch at ${contact(c)}.</p>
+      <h2>Photos</h2>
+      <p>The background photos on this site are public domain (CC0) from <a href="https://stocksnap.io" rel="noopener">StockSnap</a> and <a href="https://www.rawpixel.com/category/53/public-domain" rel="noopener">rawpixel</a>, by Olu Eletu, Thong Vo, Jesse Collins, Ian Livesey, Suvan Chowdhury, Nathan Engel, Michael Mongin and others. Thank you.</p>`,
   },
 
   guidelines: {
