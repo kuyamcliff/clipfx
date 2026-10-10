@@ -110,7 +110,8 @@ test('pages render with security headers', opts, async () => {
     assert.match(res.text_, /<title>/);
   }
   assert.equal((await b.get('/nope')).status, 404);
-  assert.equal((await b.get('/upload')).status, 302);
+  assert.equal((await b.get('/upload')).status, 200, 'anyone can upload');
+  assert.equal((await b.get('/developers')).status, 200);
   assert.equal((await b.get('/static/css/style.css')).status, 200);
   const home = (await b.get('/')).text_;
   const css = /href="(\/static\/css\/style\.css\?v=[\w-]+)"/.exec(home);
@@ -359,4 +360,87 @@ test('brand: logo, icons, manifest and default share image', opts, async () => {
   assert.equal(manifest.status, 200);
   assert.equal(JSON.parse(manifest.text_).name, 'ClipFX');
   assert.equal((await b.get('/favicon.ico')).headers.get('location'), '/static/brand/favicon.ico');
+});
+
+test('anonymous upload gets a private manage link that edits and deletes', opts, async () => {
+  const anon = browser();
+  await anon.get('/upload');
+  const res = await anon.upload(fields({ title: 'Anon Site Pack' }), { name: 'anon.zip', data: Buffer.from('PK anon site') });
+  assert.equal(res.status, 201, res.text_);
+  const { url, manageKey } = res.json_;
+  const page = await anon.get(`${url}?uploaded=1&key=${manageKey}`);
+  assert.equal(page.status, 200);
+  assert.match(page.text_, /Your private manage link/);
+  assert.match(page.text_, /Uploaded\./);
+  assert.match(page.text_, /Anonymous/);
+
+  const visitor = browser();
+  const plain = await visitor.get(url);
+  assert.doesNotMatch(plain.text_, /private manage link/);
+  assert.doesNotMatch(plain.text_, new RegExp(manageKey));
+
+  const edit = await visitor.get(`${url}/edit?key=${manageKey}`);
+  assert.equal(edit.status, 200);
+  let r = await visitor.post(`${url}/edit`, { form: { title: 'Anon Renamed', category: 'overlays', license: 'cc0', manageKey, expiry: 'keep' } });
+  assert.equal(r.status, 303);
+  assert.ok(r.headers.get('location').includes(`key=${manageKey}`));
+  assert.match((await visitor.get(url)).text_, /Anon Renamed/);
+  assert.equal((await browser().get(`${url}/edit`)).status, 403);
+  r = await visitor.post(`${url}/delete`, { form: { manageKey } });
+  assert.equal(r.status, 303);
+  assert.equal((await visitor.get(url)).status, 404);
+});
+
+test('password-locked files unlock through the page form', opts, async () => {
+  const b = browser();
+  await b.signup('lockie');
+  const { url } = (await b.upload(fields({ title: 'Locked Site Pack', password: 'letmein' }), { name: 'lock.zip', data: Buffer.from('PK lock') })).json_;
+  const v = browser();
+  let page = await v.get(url);
+  assert.match(page.text_, /Password protected/);
+  assert.match(page.text_, /name="robots" content="noindex"/);
+  let dl = await v.get(`${url}/download`);
+  assert.equal(dl.status, 302);
+  assert.match(dl.headers.get('location'), /#unlock$/);
+  let r = await v.post(`${url}/unlock`, { form: { password: 'nope' } });
+  assert.equal(r.status, 303);
+  assert.match((await v.get(url)).text_, /Wrong password/);
+  r = await v.post(`${url}/unlock`, { form: { password: 'letmein' } });
+  assert.equal(r.status, 303);
+  page = await v.get(url);
+  assert.doesNotMatch(page.text_, /Password protected/);
+  dl = await v.get(`${url}/download`);
+  assert.equal(dl.status, 302);
+  assert.doesNotMatch(dl.headers.get('location'), /#unlock/);
+});
+
+test('expired links show an expired page; owners can set a new expiry from the form', opts, async () => {
+  const b = browser();
+  await b.signup('tempo');
+  const { url, slug } = (await b.upload(fields({ title: 'Tempo Pack', expiresIn: 5 }), { name: 't.zip', data: Buffer.from('PK t') })).json_;
+  const owner = await b.get(url);
+  assert.match(owner.text_, /data-expires="\d+"/);
+  const row = await api.models.assets.rowBySlug(slug);
+  await api.models.assets.setFields(row.id, { expires_at: Date.now() - 1000 });
+  const v = await browser().get(url);
+  assert.equal(v.status, 410);
+  assert.match(v.text_, /This link has expired/);
+  const r = await b.post(`${url}/edit`, { form: { title: 'Tempo Pack', category: 'overlays', license: 'cc0', expiry: 'after', expiryAmount: '2', expiryUnit: '60' } });
+  assert.equal(r.status, 303);
+  assert.equal((await browser().get(url)).status, 200);
+  const fresh = await api.models.assets.rowBySlug(slug);
+  assert.ok(Math.abs(fresh.expires_at - (Date.now() + 2 * 3600 * 1000)) < 60000);
+});
+
+test('open to AI: robots, llms.txt and the API docs', opts, async () => {
+  const b = browser();
+  const robots = (await b.get('/robots.txt')).text_;
+  for (const bot of ['GPTBot', 'ClaudeBot', 'PerplexityBot', 'Google-Extended']) assert.match(robots, new RegExp(`User-agent: ${bot}`));
+  assert.match(robots, /Allow: \/api\/assets/);
+  assert.match(robots, /Disallow: \/settings/);
+  const llms = await b.get('/llms.txt');
+  assert.equal(llms.status, 200);
+  assert.match(llms.text_, /^# ClipFX/);
+  assert.match(llms.text_, /\/api\/assets\?q=/);
+  assert.match((await b.get('/developers')).text_, /api\/assets\/\{slug\}/);
 });

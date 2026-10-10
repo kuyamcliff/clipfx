@@ -86,7 +86,7 @@ module.exports = function authRoutes(app, ctx) {
     }
     await ctx.login(res, id);
     return res.ok({
-      user: ctx.publicUser(await models.users.byId(id), { self: true }),
+      user: await ctx.publicUser(await models.users.byId(id), { self: true }),
       message: role === 'admin' && firstUser ? 'Account created. As the first member you’re the site admin.' : 'Account created.',
     }, 201);
   });
@@ -98,7 +98,7 @@ module.exports = function authRoutes(app, ctx) {
     if (!ok) return res.fail(401, 'Wrong username/email or password.');
     if (user.banned) return res.fail(403, 'This account is suspended. Contact us if you think this is a mistake.');
     await ctx.login(res, user.id);
-    return res.ok({ user: ctx.publicUser(user, { self: true }) });
+    return res.ok({ user: await ctx.publicUser(user, { self: true }) });
   });
 
   // ---- Sign in with Google or TikTok --------------------------------------------------
@@ -211,7 +211,7 @@ module.exports = function authRoutes(app, ctx) {
     if (req.user) {
       if (user && user.id !== req.user.id) return res.fail(409, `That ${p.label} account is already used by another ${config.siteName} account.`);
       if (!user) await models.oauth.link(name, who.subject, req.user.id);
-      return res.ok({ user: ctx.publicUser(req.user, { self: true }), linked: true, message: `${p.label} is connected. You can use it to log in.` });
+      return res.ok({ user: await ctx.publicUser(req.user, { self: true }), linked: true, message: `${p.label} is connected. You can use it to log in.` });
     }
 
     let created = false;
@@ -238,7 +238,7 @@ module.exports = function authRoutes(app, ctx) {
     if (user.banned) return res.fail(403, 'This account is suspended. Contact us if you think this is a mistake.');
     await ctx.login(res, user.id);
     return res.ok({
-      user: ctx.publicUser(user, { self: true }),
+      user: await ctx.publicUser(user, { self: true }),
       created,
       message: created ? `Welcome to ${config.siteName}! Your username is @${user.username}.` : null,
     }, created ? 201 : 200);

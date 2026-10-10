@@ -1,5 +1,11 @@
 'use strict';
+const crypto = require('node:crypto');
 const { FILE_TYPES, CATEGORY_MAP, SOFTWARE_MAP, LICENSE_MAP, KINDS } = require('../catalog');
+const { isExpired } = require('../models');
+const { hashPassword, verifyPassword, safeEqual } = require('../security');
+
+const MAX_EXPIRY_MINUTES = 365 * 24 * 60;
+const sha = (s) => crypto.createHash('sha256').update(String(s)).digest('hex');
 
 const REPORT_REASONS = {
   copyright: 'Copyright infringement / I own this',
@@ -32,6 +38,42 @@ function parseAssetFields(body = {}) {
   return { values: v, errors };
 }
 
+// Link settings: expiry, download limit and password. Shared by create and edit.
+//   expiresIn     minutes from now (1 to a year); "" or 0 means the link never expires
+//   maxDownloads  stop after this many downloads; "" means no limit
+//   password      4 to 200 characters; empty means no password (or keep the current one when editing)
+function parseLinkSettings(body = {}, { editing = false } = {}) {
+  const errors = {};
+  const out = {};
+  const keepExpiry = editing && (body.expiry === 'keep' || (body.expiry === undefined && body.expiresIn === undefined));
+  if (!keepExpiry) {
+    const raw = body.expiresIn === undefined || body.expiresIn === null ? '' : String(body.expiresIn).trim();
+    if (body.expiry === 'after' && (raw === '' || raw === '0')) errors.expiresIn = 'Enter how long the link should last.';
+    else if (raw === '' || raw === '0' || body.expiry === 'never') out.expiresAt = null;
+    else {
+      const minutes = Number(raw);
+      if (!Number.isInteger(minutes) || minutes < 1 || minutes > MAX_EXPIRY_MINUTES) errors.expiresIn = 'Choose an expiry between 1 minute and 365 days.';
+      else out.expiresAt = Date.now() + minutes * 60 * 1000;
+    }
+  }
+  if (body.maxDownloads !== undefined) {
+    const raw = String(body.maxDownloads ?? '').trim();
+    if (raw === '' || raw === '0') out.maxDownloads = null;
+    else {
+      const n = Number(raw);
+      if (!Number.isInteger(n) || n < 1 || n > 1000000) errors.maxDownloads = 'Use a whole number from 1 to 1,000,000.';
+      else out.maxDownloads = n;
+    }
+  }
+  const password = String(body.password || '');
+  if (password) {
+    if (password.length < 4) errors.password = 'Use at least 4 characters.';
+    else if (password.length > 200) errors.password = 'That password is too long.';
+    else out.password = password;
+  } else if (editing && body.removePassword) out.password = null;
+  return { values: out, errors };
+}
+
 function readFilters(query) {
   const pick = (v, map) => (typeof v === 'string' && map[v] ? v : '');
   return {
@@ -54,7 +96,16 @@ const numberHint = (n, max) => {
 };
 
 module.exports = function assetRoutes(app, ctx) {
-  const { models, storage, media, rate, requireUser } = ctx;
+  const { models, storage, media, rate, requireUser, config, cookieBase } = ctx;
+
+  // "Unlocked" proof for password-protected assets: an HMAC of the slug and the current password
+  // hash, so changing the password locks everyone out again.
+  const unlockCookie = (row) => `ul_${row.slug}`;
+  const unlockValue = (row) => crypto.createHmac('sha256', config.storageSecret).update(`${row.slug}:${row.password_hash}`).digest('base64url');
+  const isUnlocked = (req, row) => !row.password_hash || safeEqual(req.cookies[unlockCookie(row)], unlockValue(row));
+  // The private manage key that anonymous uploaders (or anyone they share it with) edit and delete with.
+  const manageKeyOf = (req) => String(req.get('x-manage-key') || req.query.key || (req.body && req.body.manageKey) || '');
+  const hasManageKey = (req, row) => !!row.manage_hash && manageKeyOf(req).length > 10 && safeEqual(sha(manageKeyOf(req)), row.manage_hash);
 
   // ---- Listing ---------------------------------------------------------------------
 
@@ -63,7 +114,11 @@ module.exports = function assetRoutes(app, ctx) {
       models.assets.list({ perPage: 12 }),
       models.assets.list({ sort: 'trending', perPage: 8 }),
     ]);
-    res.ok({ stats: await models.assets.siteStats(), categories: await models.assets.categoryCounts(), fresh: fresh.items, trending: trending.items });
+    const creators = await Promise.all((await models.users.topCreators(6)).map(async (u) => ({
+      username: u.username, display_name: u.display_name, avatar_url: await ctx.avatarUrl(u.avatar_key),
+      uploads: Number(u.uploads), downloads: Number(u.downloads),
+    })));
+    res.ok({ stats: await models.assets.siteStats(), categories: await models.assets.categoryCounts(), fresh: fresh.items, trending: trending.items, creators });
   });
 
   app.get('/api/assets', async (req, res) => {
@@ -78,19 +133,26 @@ module.exports = function assetRoutes(app, ctx) {
   async function load(req, res, { allowRemoved = false } = {}) {
     const row = await models.assets.rowBySlug(req.params.slug);
     if (!row) { res.fail(404, 'This asset doesn’t exist. Double-check the link.'); return null; }
-    const owner = !!(req.user && req.user.id === row.user_id);
+    const owner = !!(req.user && req.user.id === row.user_id && !row.user_is_system) || hasManageKey(req, row);
+    const canEdit = owner || ctx.isAdmin(req);
     const hidden = row.status !== 'active' || row.user_banned;
     if (hidden && !ctx.isAdmin(req) && !(allowRemoved && owner && !row.user_banned)) {
       res.status(410).json({ ok: false, removed: true, error: 'This asset was removed.', asset: { title: row.title, removed_reason: row.removed_reason } });
       return null;
     }
-    return { row, owner, canEdit: owner || ctx.isAdmin(req) };
+    const expired = isExpired(row);
+    if (expired && !canEdit) {
+      const error = expired === 'limit' ? 'This link has reached its download limit.' : 'This link has expired.';
+      res.status(410).json({ ok: false, expired, error, asset: { title: row.title } });
+      return null;
+    }
+    return { row, owner, canEdit, unlocked: canEdit || isUnlocked(req, row) };
   }
 
   app.get('/api/assets/:slug', async (req, res) => {
     const found = await load(req, res, { allowRemoved: true });
     if (!found) return;
-    const { row, owner, canEdit } = found;
+    const { row, owner, canEdit, unlocked } = found;
     if (req.query.view === '1' && !owner && row.status === 'active' && !ctx.seenView(`${req.clientIp}|${row.id}`)) {
       await models.assets.addView(row.id);
       row.views++;
@@ -101,8 +163,13 @@ module.exports = function assetRoutes(app, ctx) {
       models.assets.list({ category: row.category, excludeId: row.id, perPage: 8, sort: 'trending' }),
     ]);
     if (row.status !== 'active' && !ctx.isAdmin(req)) ctx.hideMedia(asset);
+    // A locked asset shows nothing of its content until the password is entered.
+    if (!unlocked) ctx.hideMedia(asset);
     res.ok({
-      asset: { ...asset, isOwner: owner, canEdit },
+      asset: {
+        ...asset, isOwner: owner, canEdit, unlocked,
+        downloads_left: row.max_downloads ? Math.max(0, Number(row.max_downloads) - Number(row.downloads)) : null,
+      },
       more: more.items,
       related: related.items.filter((r) => r.user_id !== row.user_id).slice(0, 4),
       saved: req.user ? await models.favorites.has(req.user.id, row.id) : false,
@@ -115,31 +182,52 @@ module.exports = function assetRoutes(app, ctx) {
   app.get('/api/assets/:slug/download', async (req, res) => {
     const found = await load(req, res);
     if (!found) return;
-    const { row } = found;
+    const { row, unlocked } = found;
+    if (!unlocked) return res.status(403).json({ ok: false, locked: true, error: 'This file is password protected. Enter the password first.' });
     const range = req.get('range');
     if ((!range || /^bytes=0-/.test(range)) && !ctx.seenDownload(`${req.clientIp}|${row.id}`)) await models.assets.addDownload(row.id);
     const url = await storage.urlFor(row.file_key, { kind: 'download', attachment: true, filename: row.file_name, contentType: 'application/octet-stream', ttl: 6 * 3600 });
     res.redirect(302, url);
   });
 
+  app.post('/api/assets/:slug/unlock', rate('unlock', 20, 15 * 60 * 1000), async (req, res) => {
+    const found = await load(req, res);
+    if (!found) return undefined;
+    const { row } = found;
+    if (!row.password_hash) return res.ok({ message: 'This file isn’t locked.' });
+    if (!(await verifyPassword(String(req.body.password || ''), row.password_hash))) {
+      return res.fail(400, 'Wrong password.', { password: 'Wrong password. Try again.' });
+    }
+    res.cookie(unlockCookie(row), unlockValue(row), { ...cookieBase, maxAge: 12 * 3600 * 1000 });
+    return res.ok({ message: 'Unlocked. You can download it now.' });
+  });
+
   // ---- Create & edit -----------------------------------------------------------------
 
-  app.post('/api/assets', requireUser, rate('upload', 60, 3600 * 1000), async (req, res) => {
+  app.post('/api/assets', ctx.uploader, rate('upload', 60, 3600 * 1000), async (req, res) => {
     const b = req.body;
     const { values, errors } = parseAssetFields(b);
+    const link = parseLinkSettings(b);
+    Object.assign(errors, link.errors);
     if (!b.rights) errors.rights = 'Please confirm you have the right to share this.';
     const ids = b.uploads || {};
     if (!ids.file) errors.file = 'Choose a file to upload.';
     if (Object.keys(errors).length) return res.fail(400, 'Check the highlighted fields.', errors);
 
-    const { files, errors: fileErrors } = await ctx.claimUploads(req.user, ids);
+    const { files, errors: fileErrors } = await ctx.claimUploads(req.uploader, ids, req.anonHash);
     if (Object.keys(fileErrors).length) return res.fail(400, Object.values(fileErrors)[0], fileErrors);
 
+    const anonymous = !req.user;
+    const manageKey = anonymous ? crypto.randomBytes(18).toString('base64url') : null;
     const f = files.file.upload;
     const kind = FILE_TYPES[f.ext].kind;
     const created = await models.assets.create({
       ...values,
-      userId: req.user.id,
+      userId: req.uploader.id,
+      passwordHash: link.values.password ? await hashPassword(link.values.password) : null,
+      expiresAt: link.values.expiresAt || null,
+      maxDownloads: link.values.maxDownloads || null,
+      manageHash: manageKey ? sha(manageKey) : null,
       fileName: f.file_name, fileKey: f.key, fileSize: f.size, fileExt: f.ext, fileKind: kind,
       previewKey: files.preview && files.preview.upload.key,
       previewExt: files.preview && files.preview.sniffed,
@@ -151,7 +239,10 @@ module.exports = function assetRoutes(app, ctx) {
     });
     await ctx.releaseUploads(files);
     media.enqueue(created.id);
-    return res.ok({ slug: created.slug, url: `/a/${created.slug}`, shareUrl: ctx.absolute(req, `/a/${created.slug}`) }, 201);
+    return res.ok({
+      slug: created.slug, url: `/a/${created.slug}`, shareUrl: ctx.absolute(req, `/a/${created.slug}`),
+      ...(manageKey ? { manageKey, manageUrl: ctx.absolute(req, `/a/${created.slug}?key=${manageKey}`) } : {}),
+    }, 201);
   });
 
   const editable = async (req, res) => {
@@ -161,18 +252,25 @@ module.exports = function assetRoutes(app, ctx) {
     return found.row;
   };
 
-  app.post('/api/assets/:slug/edit', requireUser, rate('edit', 120, 3600 * 1000), async (req, res) => {
+  app.post('/api/assets/:slug/edit', ctx.uploader, rate('edit', 120, 3600 * 1000), async (req, res) => {
     const old = await editable(req, res);
     if (!old) return undefined;
     const b = req.body;
     const { values, errors } = parseAssetFields(b);
+    const link = parseLinkSettings(b, { editing: true });
+    Object.assign(errors, link.errors);
     if (Object.keys(errors).length) return res.fail(400, 'Check the highlighted fields.', errors);
 
-    const { files, errors: fileErrors } = await ctx.claimUploads(req.user, b.uploads || {});
+    // New files are claimed as the asset's own account (the anonymous account for anonymous uploads).
+    const owner = req.user && req.user.id === old.user_id ? req.user : await models.users.byId(old.user_id);
+    const { files, errors: fileErrors } = await ctx.claimUploads(owner, b.uploads || {}, req.anonHash);
     if (Object.keys(fileErrors).length) return res.fail(400, Object.values(fileErrors)[0], fileErrors);
 
     const garbage = [];
     const set = {};
+    if ('expiresAt' in link.values) set.expires_at = link.values.expiresAt;
+    if ('maxDownloads' in link.values) set.max_downloads = link.values.maxDownloads;
+    if ('password' in link.values) set.password_hash = link.values.password ? await hashPassword(link.values.password) : null;
     if (files.file) {
       const f = files.file.upload;
       Object.assign(set, {
@@ -215,13 +313,14 @@ module.exports = function assetRoutes(app, ctx) {
     });
   });
 
-  app.post('/api/assets/:slug/delete', requireUser, async (req, res) => {
+  app.post('/api/assets/:slug/delete', async (req, res) => {
     const row = await editable(req, res);
     if (!row) return undefined;
     await models.assets.remove(row.id);
     for (const k of [row.file_key, row.preview_key, row.thumb_key]) await storage.remove(k);
-    const own = req.user.id === row.user_id;
-    return res.ok({ message: `“${row.title}” was deleted.`, redirect: own ? '/dashboard' : '/admin?tab=assets' });
+    const own = req.user && req.user.id === row.user_id;
+    const redirect = own ? '/dashboard' : ctx.isAdmin(req) ? '/admin?tab=assets' : '/';
+    return res.ok({ message: `“${row.title}” was deleted.`, redirect });
   });
 
   // ---- Saves & reports -----------------------------------------------------------------
@@ -258,5 +357,6 @@ module.exports = function assetRoutes(app, ctx) {
 };
 
 module.exports.parseAssetFields = parseAssetFields;
+module.exports.parseLinkSettings = parseLinkSettings;
 module.exports.readFilters = readFilters;
 module.exports.REPORT_REASONS = REPORT_REASONS;
