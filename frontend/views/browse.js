@@ -197,6 +197,7 @@ function browse(ctx, { filters: f, result, sorts, categories }) {
           ${active.map(([label, change]) => html`<a class="chip chip-x" href="${filterLink(f, change)}" aria-label="Remove filter: ${label}">${label}${icon('x')}</a>`)}
           <a class="link-quiet" href="/browse">Clear all</a>
         </div>` : ''}
+        <h2 class="sr-only">Results</h2>
         ${result.items.length ? assetGrid(result.items) : emptyState('Nothing matches', 'Try different words, or remove a filter or two.',
     active.length ? html`<a class="btn btn-secondary" href="/browse">Clear filters</a>` : '')}
         ${pagination(result, '/browse', queryObj)}
@@ -260,6 +261,7 @@ function saved(ctx, { result }) {
   const body = html`
   <div class="container">
     <header class="pagehead"><div><h1>Saved</h1><p class="sub">Only you can see this list.</p></div></header>
+    <h2 class="sr-only">Saved resources</h2>
     ${result.items.length ? assetGrid(result.items) : emptyState('Nothing saved yet', 'Tap Save on any resource and it shows up here.', html`<a class="btn btn-secondary" href="/browse">Explore resources</a>`, 'bookmark')}
     ${pagination(result, '/saved')}
   </div>`;
