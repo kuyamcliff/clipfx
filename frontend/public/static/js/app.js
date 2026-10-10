@@ -199,6 +199,20 @@
     }
   });
 
+  // The hero monitor's timecode runs at 24 fps like a playing clip.
+  $$('[data-timecode]').forEach((el) => {
+    if (reduceMotion) return;
+    const start = performance.now() - 12 * 1000 - 4 * (1000 / 24);
+    const pad = (n) => String(n).padStart(2, '0');
+    const tick = (t) => {
+      const f = Math.floor((t - start) / (1000 / 24));
+      const sec = Math.floor(f / 24);
+      el.textContent = `${pad(Math.floor(sec / 3600))}:${pad(Math.floor(sec / 60) % 60)}:${pad(sec % 60)}:${pad(f % 24)}`;
+      requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  });
+
   $$('[data-count]').forEach((el) => {
     const target = Number(el.dataset.count);
     if (!target || reduceMotion || target > 1e6) return;

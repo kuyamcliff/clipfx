@@ -9,9 +9,9 @@ const SUGGESTIONS = ['light leak', 'whoosh', 'film grain', 'lower third', 'glitc
 
 function categoryGrid(categories) {
   return html`<div class="cats">
-    ${categories.map((c) => html`<a class="cat" href="/browse?category=${c.id}" ${hue(c)} data-reveal>
+    ${categories.map((c, n) => html`<a class="cat" href="/browse?category=${c.id}" ${hue(c)}>
       <img class="cat-img" src="${categoryPhoto(c)}" alt="" width="640" height="400" loading="lazy" decoding="async">
-      <span class="cat-icon">${icon(c.icon)}</span>
+      <span class="cat-num mono">${String(n + 1).padStart(2, '0')}</span>
       <span class="cat-text"><span class="cat-name">${c.name}</span><span class="cat-count">${formatCount(c.count)} ${c.count === 1 ? 'file' : 'files'}</span></span>
     </a>`)}
   </div>`;
@@ -36,52 +36,55 @@ const FEATURES = [
 function home(ctx, { stats, categories, fresh, trending, creators }) {
   const body = html`
   <section class="hero">
-    <div class="hero-media" aria-hidden="true"><img src="/static/img/hero.webp" alt="" width="1920" height="1080" fetchpriority="high" decoding="async"></div>
     <div class="container hero-in">
-      <h1 class="hero-title">Find all resources for <span class="grad">video editing</span></h1>
-      <p class="hero-sub">Stock footage, transitions, LUTs, overlays, templates, sound effects and music, shared by editors and free to download.</p>
-      <form class="hero-search" action="/browse" role="search">
-        ${icon('search')}
-        <input type="search" name="q" placeholder="Try &quot;film grain&quot; or &quot;whoosh&quot;" aria-label="Search resources" autocomplete="off">
-        <button class="btn btn-primary" type="submit">Search</button>
-      </form>
-      <div class="hero-chips">${SUGGESTIONS.map((s) => html`<a class="chip" href="/browse?q=${encodeURIComponent(s)}">${s}</a>`)}</div>
-      <dl class="hero-stats">
-        <div><dt>Resources</dt><dd data-count="${stats.assets}">${formatCount(stats.assets)}</dd></div>
-        <div><dt>Downloads</dt><dd data-count="${stats.downloads}">${formatCount(stats.downloads)}</dd></div>
-        <div><dt>Creators</dt><dd data-count="${stats.creators}">${formatCount(stats.creators)}</dd></div>
-      </dl>
+      <div class="hero-copy">
+        <p class="hero-meta mono">${formatCount(stats.assets)} files &middot; ${categories.length} categories &middot; free</p>
+        <h1 class="hero-title">Find all resources for video editing.</h1>
+        <p class="hero-sub">Stock footage, transitions, LUTs, overlays, templates, sound effects and music. Shared by editors, free to download, no account needed.</p>
+        <form class="hero-search" action="/browse" role="search">
+          ${icon('search')}
+          <input type="search" name="q" placeholder="Search footage, LUTs, sounds" aria-label="Search resources" autocomplete="off">
+          <button class="btn btn-primary" type="submit">Search</button>
+        </form>
+        <p class="hero-popular"><span class="mono">Popular</span> ${SUGGESTIONS.map((s, n) => html`${n ? ', ' : ''}<a href="/browse?q=${encodeURIComponent(s)}">${s}</a>`)}</p>
+      </div>
+      <figure class="monitor" aria-hidden="true">
+        <img src="/static/img/hero.webp" alt="" width="1920" height="1080" fetchpriority="high" decoding="async">
+        <span class="monitor-safe"></span>
+        <span class="monitor-tc mono" data-timecode>00:00:12:04</span>
+        <span class="monitor-tag mono">A001_C004 &middot; 4K &middot; 23.976</span>
+      </figure>
     </div>
   </section>
 
   <div class="container">
     <section class="section">
-      ${sectionHead('Browse by category', ['/browse', 'View all'], '', 'Everything an edit needs, sorted.')}
+      ${sectionHead('Categories', ['/browse', 'Browse everything'])}
       ${categoryGrid(categories)}
     </section>
 
     ${trending.length ? html`<section class="section">
-      ${sectionHead('Trending now', ['/browse?sort=trending', 'See all'], '', 'Most downloaded in the last two weeks.')}
+      ${sectionHead('Trending this week', ['/browse?sort=trending', 'See all'])}
       ${assetGrid(trending)}
     </section>` : ''}
 
     <section class="section">
-      ${sectionHead('Fresh uploads', ['/browse', 'See all'])}
+      ${sectionHead('Just uploaded', ['/browse', 'See all'])}
       ${fresh.length ? assetGrid(fresh) : emptyState('Nothing here yet', 'Be the first to share something. You don\'t even need an account.',
     html`<a class="btn btn-primary" href="/upload">${icon('upload')}<span>Upload a file</span></a>`, 'upload')}
     </section>
 
     ${creators && creators.length ? html`<section class="section">
-      ${sectionHead('Top creators', null, '', 'The people behind the most downloaded files.')}
+      ${sectionHead('Creators', null)}
       <div class="creators">${creators.map(creatorCard)}</div>
     </section>` : ''}
 
     <section class="section">
-      <div class="features">${FEATURES.map(([ic, t, d]) => html`<div class="feature" data-reveal>
-        <span class="feature-icon">${icon(ic)}</span><h3>${t}</h3><p>${d}</p></div>`)}</div>
+      ${sectionHead('How it works', null)}
+      <ol class="steps">${FEATURES.map(([, t, d]) => html`<li><h3>${t}</h3><p>${d}</p></li>`)}</ol>
     </section>
 
-    <section class="cta" data-reveal>
+    <section class="cta">
       <img class="cta-img" src="/static/img/cta.webp" alt="" width="1280" height="560" loading="lazy" decoding="async">
       <div>
         <h2>Made something useful?</h2>

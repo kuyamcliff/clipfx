@@ -42,7 +42,7 @@ function layout(ctx, { title, description, body, og = {}, noindex = false, ldJso
   <link rel="apple-touch-icon" href="/static/brand/apple-touch-icon.png">
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="alternate" type="text/plain" href="/llms.txt" title="Guide for AI assistants">
-  <link rel="preload" href="/static/fonts/jakarta.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/static/fonts/archivo.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="${ctx.asset('/static/css/style.css')}">
   <meta property="og:site_name" content="${config.siteName}">
   <meta property="og:title" content="${og.title || title || config.siteName}">
