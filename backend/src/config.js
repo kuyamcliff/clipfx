@@ -64,6 +64,9 @@ function loadConfig(overrides = {}) {
     sourceUrl: env.SOURCE_URL || 'https://github.com/kuyamcliff/clipfx',
     adminUsernames: (env.ADMIN_USERNAMES || '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean),
     openSignups: bool(env.OPEN_SIGNUPS, true),
+    // Uploading without an account. Anonymous files get a private manage link instead of an owner.
+    anonUploads: bool(env.ANON_UPLOADS, true),
+    anonMaxUpload: num(env.ANON_MAX_UPLOAD_MB, 1024) * MB,
     // "Continue with Google". The redirect URI registered in Google Cloud is BASE_URL + /auth/google/callback.
     google: {
       clientId: env.GOOGLE_CLIENT_ID || '',

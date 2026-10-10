@@ -1,5 +1,7 @@
 'use strict';
 const catalog = require('../catalog');
+const { MEDIA_MIME, extOfKey } = require('../models');
+const { parseSocials, PLATFORMS } = require('../socials');
 
 // Everything the frontend needs that rarely changes: site settings, limits and the taxonomy.
 module.exports = function metaRoutes(app, ctx) {
@@ -20,6 +22,9 @@ module.exports = function metaRoutes(app, ctx) {
       storageOrigins: storage.origins,
       mediaProcessing: media.available,
       uploadsEnabled: config.uploadsEnabled,
+      anonUploads: config.anonUploads,
+      anonMaxUpload: config.anonMaxUpload,
+      socialPlatforms: Object.fromEntries(Object.entries(PLATFORMS).map(([k, v]) => [k, v.label])),
       googleAuth: !!(config.google.clientId && config.google.clientSecret),
       tiktokAuth: !!(config.tiktok.clientKey && config.tiktok.clientSecret),
     },
@@ -40,14 +45,16 @@ module.exports = function metaRoutes(app, ctx) {
     res.ok(meta);
   });
 
-  ctx.publicUser = (u, { self = false } = {}) => u && ({
+  ctx.avatarUrl = (key) => (key ? storage.urlFor(key, { kind: 'image', contentType: MEDIA_MIME[extOfKey(key)], stable: true }) : null);
+  ctx.publicUser = async (u, { self = false } = {}) => u && ({
     id: u.id, username: u.username, display_name: u.display_name, bio: u.bio, website: u.website,
+    socials: parseSocials(u.socials), avatar_url: await ctx.avatarUrl(u.avatar_key), anonymous: !!u.is_system,
     role: u.role, banned: !!u.banned, created_at: u.created_at, ...(self ? { email: u.email || '', has_password: !!u.password_hash } : {}),
   });
 
   app.get('/api/session', async (req, res) => {
     res.ok({
-      user: req.user ? { ...ctx.publicUser(req.user, { self: true }), connections: await models.oauth.forUser(req.user.id) } : null,
+      user: req.user ? { ...(await ctx.publicUser(req.user, { self: true })), connections: await models.oauth.forUser(req.user.id) } : null,
       openReports: ctx.isAdmin(req) ? await models.reports.openCount() : 0,
     });
   });

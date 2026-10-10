@@ -180,6 +180,9 @@ async function openPostgres(url, { ssl, schema = 'clipfx' } = {}) {
   const query = (sql, params) => withClient((c) => c.query(toPg(sql), params));
 
   await pool.query(schemaSql(SCHEMA_NAME));
+  const added = Object.entries(require('./columns'))
+    .flatMap(([table, cols]) => cols.map(([name, type]) => `ALTER TABLE ${SCHEMA_NAME}.${table} ADD COLUMN IF NOT EXISTS ${name} ${type};`));
+  await pool.query(added.join('\n'));
 
   return {
     dialect: 'postgres',

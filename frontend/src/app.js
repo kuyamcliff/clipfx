@@ -8,7 +8,7 @@ const views = require('../views');
 const { createBackend } = require('./backend');
 const { buildCatalog, decorate, decorateAll, withCounts } = require('./decorate');
 
-const STATIC_PAGES = ['about', 'guidelines', 'licenses', 'terms', 'privacy', 'copyright', 'donate'];
+const STATIC_PAGES = ['about', 'guidelines', 'licenses', 'terms', 'privacy', 'copyright', 'donate', 'developers'];
 const META_TTL = 5 * 60 * 1000;
 
 // Used only when the API can't be reached, so error pages still render.
@@ -38,6 +38,15 @@ function safeEqual(a, b) {
 const safeNext = (n) => (typeof n === 'string' && /^\/(?![/\\])/.test(n) ? n : '');
 const checked = (v) => v === 'on' || v === 'true' || v === '1' || v === true;
 const list = (v) => (Array.isArray(v) ? v : v ? [v] : []);
+// Link settings from a plain HTML form: "after N minutes/hours/days" becomes minutes for the API.
+const linkBody = (b) => {
+  const out = { expiry: b.expiry, maxDownloads: b.maxDownloads, password: b.password, removePassword: checked(b.removePassword) };
+  if (b.expiry === 'after') {
+    const minutes = Math.round(Number(b.expiryAmount) * Number(b.expiryUnit || 1));
+    out.expiresIn = Number.isFinite(minutes) && minutes > 0 ? String(minutes) : '';
+  }
+  return out;
+};
 
 function createFrontend(config, { log = console } = {}) {
   const app = express();
@@ -114,6 +123,7 @@ function createFrontend(config, { log = console } = {}) {
       req.ctx = {
         config: m.config, catalog: m.catalog, user: s.user || null, openReports: s.openReports || 0,
         csrf: req.cookies.csrf, flash, path: req.path, query: req.query,
+        theme: ['light', 'dark'].includes(req.cookies.theme) ? req.cookies.theme : '',
         asset: (p) => `${p}?v=${config.assetVersion}`,
         absolute: (p) => (/^https?:\/\//.test(p) ? p : `${origin}${p}`),
         decorate: (a) => decorate(a, m.catalog),
@@ -204,6 +214,7 @@ function createFrontend(config, { log = console } = {}) {
       categories: withCounts(ctx.catalog, r.data.categories),
       fresh: ctx.decorateAll(r.data.fresh),
       trending: ctx.decorateAll(r.data.trending),
+      creators: r.data.creators || [],
     });
   });
 
@@ -244,8 +255,19 @@ function createFrontend(config, { log = console } = {}) {
 
   const slugPath = (req) => `/api/assets/${encodeURIComponent(req.params.slug)}`;
 
+  // The private manage key of an anonymous upload travels as ?key= on pages and manageKey in forms.
+  const manageKeyOf = (req) => {
+    const k = (req.body && req.body.manageKey) || req.query.key;
+    return typeof k === 'string' && /^[\w-]{10,80}$/.test(k) ? k : '';
+  };
+  const withKey = (req, url) => (manageKeyOf(req) ? `${url}${url.includes('?') ? '&' : '?'}key=${manageKeyOf(req)}` : url);
+
   async function loadAsset(req, res, { view = false } = {}) {
-    const [ctx, r] = await Promise.all([req.context(), req.api('GET', `${slugPath(req)}${view ? '?view=1' : ''}`)]);
+    const qs = new URLSearchParams();
+    if (view) qs.set('view', '1');
+    if (manageKeyOf(req)) qs.set('key', manageKeyOf(req));
+    const [ctx, r] = await Promise.all([req.context(), req.api('GET', `${slugPath(req)}${qs.size ? `?${qs}` : ''}`)]);
+    if (r.status === 410 && r.data.expired) { await res.view(views.expired, { asset: r.data.asset, reason: r.data.expired }, 410); return null; }
     if (r.status === 410) { await res.view(views.removed, { asset: r.data.asset }, 410); return null; }
     if (r.status === 404) { await res.fail(404, 'Asset not found', 'This asset doesn’t exist. Double-check the link.'); return null; }
     if (r.status !== 200) { await res.apiError(r); return null; }
@@ -261,7 +283,8 @@ function createFrontend(config, { log = console } = {}) {
     const data = await loadAsset(req, res, { view: true });
     if (!data) return undefined;
     if (data.asset.visibility === 'unlisted') res.setHeader('X-Robots-Tag', 'noindex');
-    return res.view(views.asset, { ...data, justUploaded: req.query.uploaded === '1' && data.asset.isOwner });
+    if (data.asset.visibility === 'unlisted' || data.asset.locked || data.asset.expires_at || data.asset.max_downloads) res.setHeader('X-Robots-Tag', 'noindex');
+    return res.view(views.asset, { ...data, manageKey: data.asset.canEdit ? manageKeyOf(req) : '', justUploaded: req.query.uploaded === '1' && data.asset.isOwner });
   });
 
   // The API counts the download and answers with a redirect to storage; pass it on.
@@ -272,16 +295,34 @@ function createFrontend(config, { log = console } = {}) {
       res.setHeader('X-Robots-Tag', 'noindex');
       return res.redirect(302, r.location);
     }
+    if (r.status === 410 && r.data.expired) return res.view(views.expired, { asset: r.data.asset, reason: r.data.expired }, 410);
     if (r.status === 410) return res.view(views.removed, { asset: r.data.asset || { title: 'This asset' } }, 410);
+    if (r.status === 403 && r.data.locked) {
+      res.flash('error', 'This file is password protected. Enter the password to download it.');
+      return res.redirect(`/a/${encodeURIComponent(req.params.slug)}#unlock`);
+    }
     return res.apiError(r);
   });
 
-  app.get('/upload', requireUser, async (req, res) => {
+  app.post('/a/:slug/unlock', formAction({
+    api: (req) => `${slugPath(req)}/unlock`,
+    body: (req) => ({ password: req.body.password }),
+    redirect: (req) => `/a/${req.params.slug}`,
+  }));
+
+  // Anyone can upload. Without an account the file gets a private manage link instead of an owner.
+  app.get('/upload', async (req, res) => {
+    const ctx = await req.context();
+    const values = { license: 'free', visibility: 'public', software: [], expiry: 'never' };
+    if (!ctx.user) {
+      if (ctx.config.anonUploads === false) return res.redirect(`/login?next=${encodeURIComponent('/upload')}`);
+      const max = Math.min(ctx.config.maxUpload, ctx.config.anonMaxUpload || ctx.config.maxUpload);
+      return res.view(views.upload, { values, errors: {}, limits: { maxUpload: max, maxPreview: ctx.config.maxPreview, quota: null, used: 0 } });
+    }
     const r = await req.api('GET', '/api/me/storage');
     if (r.status !== 200) return res.apiError(r);
-    const ctx = await req.context();
     return res.view(views.upload, {
-      values: { license: 'free', visibility: 'public', software: [] }, errors: {},
+      values, errors: {},
       limits: { maxUpload: ctx.config.maxUpload, maxPreview: ctx.config.maxPreview, quota: r.data.quota, used: r.data.used },
     });
   });
@@ -289,6 +330,7 @@ function createFrontend(config, { log = console } = {}) {
   const editValues = (a) => ({
     title: a.title, description: a.description, category: a.category.id, software: a.software.map((s) => s.id),
     tags: a.tags.join(', '), license: a.license.id, visibility: a.visibility,
+    expiry: 'keep', maxDownloads: a.max_downloads || '',
   });
   const renderEdit = async (req, res, { errors = {}, values = null, status = 200 } = {}) => {
     const data = await loadAsset(req, res);
@@ -296,25 +338,25 @@ function createFrontend(config, { log = console } = {}) {
     if (!data.asset.canEdit) return res.fail(403, 'Not yours', 'Only the uploader can edit this asset.');
     const ctx = await req.context();
     return res.view(views.editAsset, {
-      asset: data.asset, errors,
+      asset: data.asset, errors, manageKey: manageKeyOf(req),
       values: values ? { ...values, software: list(values.software) } : editValues(data.asset),
       limits: { maxUpload: ctx.config.maxUpload, maxPreview: ctx.config.maxPreview },
     }, status);
   };
-  app.get('/a/:slug/edit', requireUser, (req, res) => renderEdit(req, res));
+  app.get('/a/:slug/edit', (req, res) => renderEdit(req, res));
 
   // Without JavaScript only the details can change; replacing files needs the upload script.
-  app.post('/a/:slug/edit', requireUser, formAction({
+  app.post('/a/:slug/edit', formAction({
     api: (req) => `${slugPath(req)}/edit`,
     body: (req) => ({
-      ...req.body, software: list(req.body.software),
+      ...req.body, ...linkBody(req.body), software: list(req.body.software),
       removeThumb: checked(req.body.removeThumb), removePreview: checked(req.body.removePreview),
     }),
-    redirect: (req) => `/a/${req.params.slug}`,
+    redirect: (req) => withKey(req, `/a/${req.params.slug}`),
     rerender: (req, res, { errors, values }) => renderEdit(req, res, { errors, values, status: 400 }),
   }));
 
-  app.post('/a/:slug/delete', requireUser, formAction({ api: (req) => `${slugPath(req)}/delete`, body: () => ({}) }));
+  app.post('/a/:slug/delete', formAction({ api: (req) => `${slugPath(req)}/delete`, body: (req) => ({ manageKey: manageKeyOf(req) || undefined }) }));
   app.post('/a/:slug/save', requireUser, formAction({ api: (req) => `${slugPath(req)}/save`, body: () => ({}), redirect: (req) => `/a/${req.params.slug}` }));
 
   const renderReport = async (req, res, { values = {}, errors = {}, status = 200 } = {}) => {
@@ -421,7 +463,10 @@ function createFrontend(config, { log = console } = {}) {
     const ctx = await req.context();
     const u = ctx.user;
     return res.view(views.settings, {
-      values: values || { display_name: u.display_name, bio: u.bio, website: u.website, email: u.email || '' }, errors,
+      values: values || {
+        display_name: u.display_name, bio: u.bio, website: u.website, email: u.email || '',
+        ...Object.fromEntries(Object.keys(ctx.config.socialPlatforms || {}).map((k) => [`social_${k}`, (u.socials || {})[k] || ''])),
+      }, errors,
     }, status);
   };
   app.get('/settings', requireUser, (req, res) => renderSettings(req, res));
@@ -429,6 +474,8 @@ function createFrontend(config, { log = console } = {}) {
     api: '/api/me/profile', redirect: '/settings',
     rerender: (req, res, { errors, values }) => renderSettings(req, res, { values, errors, status: 400 }),
   }));
+  app.post('/settings/avatar/remove', requireUser, formAction({ api: '/api/me/avatar/remove', body: () => ({}), redirect: '/settings' }));
+
   app.post('/settings/password', requireUser, formAction({
     api: '/api/me/password', redirect: '/settings',
     rerender: (req, res, { errors }) => renderSettings(req, res, { errors, status: 400 }),
@@ -468,12 +515,50 @@ function createFrontend(config, { log = console } = {}) {
     return m.config.donateUrl ? res.redirect(m.config.donateUrl) : res.redirect('/donate');
   });
 
+  // Open to every search engine and AI crawler. Named AI agents share the same rules as everyone,
+  // listed so it's explicit they're welcome. Private areas and actions stay out.
+  const AI_AGENTS = ['GPTBot', 'OAI-SearchBot', 'ChatGPT-User', 'ClaudeBot', 'Claude-User', 'Claude-SearchBot', 'anthropic-ai',
+    'PerplexityBot', 'Perplexity-User', 'Google-Extended', 'Applebot-Extended', 'CCBot', 'Amazonbot', 'meta-externalagent',
+    'DuckAssistBot', 'MistralAI-User', 'cohere-ai', 'YouBot'];
   app.get('/robots.txt', (req, res) => {
     const origin = config.publicUrl || `${req.protocol}://${req.get('host')}`;
     res.type('text/plain').send([
-      'User-agent: *', 'Disallow: /admin', 'Disallow: /dashboard', 'Disallow: /settings', 'Disallow: /saved',
-      'Disallow: /upload', 'Disallow: /api/', 'Disallow: /auth/', 'Disallow: /*/download', 'Disallow: /*/report', `Sitemap: ${origin}/sitemap.xml`, '',
+      'User-agent: *', ...AI_AGENTS.map((a) => `User-agent: ${a}`),
+      'Allow: /', 'Allow: /api/assets', 'Allow: /api/users', 'Allow: /api/creators',
+      'Disallow: /admin', 'Disallow: /dashboard', 'Disallow: /settings', 'Disallow: /saved', 'Disallow: /auth/',
+      'Disallow: /api/', 'Disallow: /*/download', 'Disallow: /*/report', 'Disallow: /*/edit',
+      '', `Sitemap: ${origin}/sitemap.xml`, '',
     ].join('\n'));
+  });
+
+  // A plain-text guide for AI assistants (llmstxt.org): what the site is and how to read it.
+  app.get('/llms.txt', async (req, res) => {
+    const origin = siteOrigin(req);
+    const m = await getMeta(req);
+    res.setHeader('Cache-Control', 'public, max-age=3600');
+    res.type('text/plain').send(`# ${m.config.siteName}
+
+> ${m.config.siteName} is a free, nonprofit library of video editing resources: stock footage, transitions, overlays and VFX, LUTs, project templates, motion graphics, presets and MOGRTs, sound effects, music, textures and 3D assets. Anyone can browse and download without an account. Every asset shows its license.
+
+## Pages
+- [Home](${origin}/): search and featured resources
+- [Browse](${origin}/browse): every public asset; filter with ?q=, ?category=, ?software=, ?license=, ?kind=, ?sort=trending|downloads
+${m.catalog.categories.map((c) => `- [${c.name}](${origin}/browse?category=${c.id}): ${c.blurb}`).join('\n')}
+- [Licenses](${origin}/licenses): what each license allows
+- [Guidelines](${origin}/guidelines): accepted formats and rules
+
+## Public JSON API (no key needed)
+- ${origin}/api/assets?q=film+grain&category=overlays&page=1 : search assets
+- ${origin}/api/assets/{slug} : one asset with its license, file details and creator
+- ${origin}/api/users/{username} : a creator's profile and uploads
+- ${origin}/api/creators : most downloaded creators
+- ${origin}/api/meta : categories, software, licenses and accepted file types
+- Asset pages live at ${origin}/a/{slug}; downloads at ${origin}/a/{slug}/download
+
+## Optional
+- [API documentation](${origin}/developers)
+- [Sitemap](${origin}/sitemap.xml)
+`);
   });
 
   // ---- Sitemaps ---------------------------------------------------------------------------

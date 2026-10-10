@@ -1,5 +1,6 @@
 'use strict';
 const { hashPassword, verifyPassword } = require('../security');
+const { PLATFORMS, normalizeSocial } = require('../socials');
 
 function normalizeWebsite(input) {
   let s = String(input || '').trim();
@@ -21,14 +22,25 @@ module.exports = function userRoutes(app, ctx) {
 
   app.get('/api/users/:username', async (req, res) => {
     const profile = await models.users.byUsername(req.params.username);
-    if (!profile || (profile.banned && !ctx.isAdmin(req))) return res.fail(404, 'There’s no creator with that username.');
+    if (!profile || profile.is_system || (profile.banned && !ctx.isAdmin(req))) return res.fail(404, 'There’s no creator with that username.');
     const sort = ctx.SORTS[req.query.sort] ? req.query.sort : 'new';
     res.ok({
-      profile: ctx.publicUser(profile),
-      stats: await models.users.stats(profile.id),
+      profile: await ctx.publicUser(profile),
+      stats: await models.users.stats(profile.id, { publicOnly: true }),
       result: await models.assets.list({ userId: profile.id, page: pageOf(req.query), sort, perPage: 24, includeBanned: true }),
       sort,
       sorts: ctx.SORTS,
+    });
+  });
+
+  app.get('/api/creators', async (req, res) => {
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 8, 1), 50);
+    const rows = await models.users.topCreators(limit);
+    res.ok({
+      creators: await Promise.all(rows.map(async (u) => ({
+        username: u.username, display_name: u.display_name, avatar_url: await ctx.avatarUrl(u.avatar_key),
+        uploads: Number(u.uploads), downloads: Number(u.downloads),
+      }))),
     });
   });
 
@@ -66,9 +78,38 @@ module.exports = function userRoutes(app, ctx) {
       if (!ctx.EMAIL_RE.test(values.email) || values.email.length > 200) errors.email = 'That email doesn’t look right.';
       else if (other && other.id !== req.user.id) errors.email = 'Another account uses that email.';
     }
+    // Social links arrive as social_<platform> fields (or a socials object).
+    const socials = {};
+    const given = b.socials && typeof b.socials === 'object' ? b.socials : {};
+    for (const key of Object.keys(PLATFORMS)) {
+      const raw = given[key] ?? b[`social_${key}`];
+      if (raw === undefined) continue;
+      const r = normalizeSocial(key, raw);
+      if (r.error) errors[`social_${key}`] = r.error; else if (r.value) socials[key] = r.value;
+    }
     if (Object.keys(errors).length) return res.fail(400, 'Check the highlighted fields.', errors);
     await models.users.updateProfile(req.user.id, { displayName: values.display_name, bio: values.bio, website: values.website, email: values.email });
-    return res.ok({ message: 'Profile updated.', user: ctx.publicUser(await models.users.byId(req.user.id), { self: true }) });
+    await models.users.setSocials(req.user.id, socials);
+    return res.ok({ message: 'Profile updated.', user: await ctx.publicUser(await models.users.byId(req.user.id), { self: true }) });
+  });
+
+  // Profile photo: uploaded to storage like any other file (field "avatar"), then attached here.
+  app.post('/api/me/avatar', requireUser, rate('avatar', 30, 3600 * 1000), async (req, res) => {
+    const { files, errors } = await ctx.claimUploads(req.user, { avatar: req.body.upload });
+    if (!files.avatar) return res.fail(400, errors.avatar || 'Choose an image first.', { avatar: errors.avatar || 'Choose an image first.' });
+    const old = req.user.avatar_key;
+    await models.users.setAvatar(req.user.id, files.avatar.upload.key);
+    await ctx.releaseUploads(files);
+    if (old) await storage.remove(old);
+    return res.ok({ message: 'Profile photo updated.', avatar_url: await ctx.avatarUrl(files.avatar.upload.key) });
+  });
+
+  app.post('/api/me/avatar/remove', requireUser, async (req, res) => {
+    if (req.user.avatar_key) {
+      await storage.remove(req.user.avatar_key);
+      await models.users.setAvatar(req.user.id, null);
+    }
+    return res.ok({ message: 'Profile photo removed.' });
   });
 
   app.post('/api/me/password', requireUser, rate('password', 10, 3600 * 1000), async (req, res) => {
@@ -95,6 +136,7 @@ module.exports = function userRoutes(app, ctx) {
     const keys = await models.assets.keysForUser(req.user.id);
     const pending = await models.uploads.forUser(req.user.id);
     await models.users.remove(req.user.id);
+    if (req.user.avatar_key) await storage.remove(req.user.avatar_key);
     for (const k of keys.flatMap((r) => [r.file_key, r.preview_key, r.thumb_key])) await storage.remove(k);
     for (const u of pending) {
       if (u.multipart_id) await storage.abortMultipart(u.key, u.multipart_id);

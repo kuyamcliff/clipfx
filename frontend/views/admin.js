@@ -30,7 +30,7 @@ function admin(ctx, { tab, q, stats, openReports, reports, result, users, reason
           <label class="check"><input type="checkbox" name="block" ${['copyright', 'stolen', 'malware'].includes(r.reason) ? 'checked' : ''}><span>Block re-uploads</span></label>
           <button class="btn btn-sm btn-danger" type="submit">Remove asset</button>
         </form>
-        <form method="post" action="/admin/reports/${r.id}/dismiss">${csrfField(ctx)}${back}<button class="btn btn-sm btn-quiet" type="submit">Dismiss</button></form>
+        <form method="post" action="/admin/reports/${r.id}/dismiss">${csrfField(ctx)}${back}<button class="btn btn-sm btn-ghost" type="submit">Dismiss</button></form>
       </div>
     </article>`)}</div>` : emptyState('No open reports', 'New reports will show up here.');
   } else if (tab === 'assets' || tab === 'removed') {
@@ -63,21 +63,21 @@ function admin(ctx, { tab, q, stats, openReports, reports, result, users, reason
         <dl class="row-stats"><div><dt>Assets</dt><dd>${formatCount(u.asset_count)}</dd></div></dl>
         <div class="row-actions">${u.id === ctx.user.id ? html`<span class="dim">That's you</span>` : html`
           <form method="post" action="/admin/users/${u.id}/ban" data-confirm="${u.banned ? 'Unban' : 'Ban'} @${u.username}?">${csrfField(ctx)}${back}<button class="btn btn-sm ${u.banned ? '' : 'btn-danger'}">${u.banned ? 'Unban' : 'Ban'}</button></form>
-          <form method="post" action="/admin/users/${u.id}/role" data-confirm="Change @${u.username}'s role?">${csrfField(ctx)}${back}<button class="btn btn-sm btn-quiet">${u.role === 'admin' ? 'Remove mod' : 'Make mod'}</button></form>
-          <form method="post" action="/admin/users/${u.id}/reset">${csrfField(ctx)}${back}<button class="btn btn-sm btn-quiet">Reset link</button></form>`}</div>
+          <form method="post" action="/admin/users/${u.id}/role" data-confirm="Change @${u.username}'s role?">${csrfField(ctx)}${back}<button class="btn btn-sm btn-ghost">${u.role === 'admin' ? 'Remove mod' : 'Make mod'}</button></form>
+          <form method="post" action="/admin/users/${u.id}/reset">${csrfField(ctx)}${back}<button class="btn btn-sm btn-ghost">Reset link</button></form>`}</div>
       </li>`)}</ul>` : emptyState('No users found', 'Try a different search.')}`;
   }
 
   const body = html`
-  <div class="wrap">
+  <div class="container">
     <header class="pagehead"><div><h1>Moderation</h1><p class="sub">Reports, removals and accounts.</p></div></header>
-    <div class="tiles">
-      <div class="tile-stat"><p class="tile-label">Public assets</p><p class="tile-num">${formatCount(stats.assets)}</p></div>
-      <div class="tile-stat"><p class="tile-label">Members</p><p class="tile-num">${formatCount(stats.users)}</p></div>
-      <div class="tile-stat"><p class="tile-label">Downloads</p><p class="tile-num">${formatCount(stats.downloads)}</p></div>
-      <div class="tile-stat"><p class="tile-label">Stored</p><p class="tile-num">${formatBytes(stats.bytes)}</p></div>
+    <div class="statgrid">
+      <div class="stat"><p class="stat-label">Public assets</p><p class="stat-num">${formatCount(stats.assets)}</p></div>
+      <div class="stat"><p class="stat-label">Members</p><p class="stat-num">${formatCount(stats.users)}</p></div>
+      <div class="stat"><p class="stat-label">Downloads</p><p class="stat-num">${formatCount(stats.downloads)}</p></div>
+      <div class="stat"><p class="stat-label">Stored</p><p class="stat-num">${formatBytes(stats.bytes)}</p></div>
     </div>
-    <nav class="seg seg-tabs" aria-label="Moderation sections">${tabs.map(([id, label, n]) => html`<a href="/admin?tab=${id}" ${tab === id ? raw('aria-current="page"') : ''}>${label}${n ? html` <span class="badge">${n}</span>` : ''}</a>`)}</nav>
+    <nav class="seg seg-scroll" aria-label="Moderation sections">${tabs.map(([id, label, n]) => html`<a href="/admin?tab=${id}" ${tab === id ? raw('aria-current="page"') : ''}>${label}${n ? html` <span class="badge">${n}</span>` : ''}</a>`)}</nav>
     ${content}
   </div>`;
   return layout(ctx, { title: 'Moderation', body, noindex: true });

@@ -144,6 +144,31 @@ const PAGES = {
       <p>Accounts that keep uploading infringing material are banned.</p>`,
   },
 
+  developers: {
+    title: 'API and AI access',
+    lead: (c) => `${c.siteName} is open to everyone, including apps and AI assistants. Browsing data is public JSON with no key.`,
+    body: (c, stats, cat, origin) => {
+      const ep = (method, path, text) => html`<div class="endpoint"><p><span class="method">${method}</span><code>${path}</code></p><p>${text}</p></div>`;
+      return html`
+      <h2>For AI assistants and crawlers</h2>
+      <p>Every public page is crawlable and every AI crawler is welcome (see <a href="/robots.txt">robots.txt</a>). A plain-text summary written for language models lives at <a href="/llms.txt">/llms.txt</a>, and the <a href="/sitemap.xml">sitemap</a> lists every public file and creator.</p>
+      <h2>Endpoints</h2>
+      <p>All responses are JSON with <code>ok: true</code> on success. No authentication is needed for these.</p>
+      <div class="endpoints">
+        ${ep('GET', '/api/assets?q=&category=&software=&license=&kind=&sort=&page=', 'Search and filter public files. Sort is new, trending or downloads. 24 per page.')}
+        ${ep('GET', '/api/assets/{slug}', 'One file: title, description, tags, license, file details, preview URLs and creator.')}
+        ${ep('GET', '/api/users/{username}', 'A creator\'s public profile, social links and uploads.')}
+        ${ep('GET', '/api/creators?limit=8', 'The most downloaded creators.')}
+        ${ep('GET', '/api/meta', 'Categories, supported software, licenses and accepted file types.')}
+        ${ep('GET', '/a/{slug}/download', 'Downloads the file (a redirect to storage). Counts as a download.')}
+      </div>
+      <h2>Example</h2>
+      <pre class="code">curl "${origin}/api/assets?q=light+leak&amp;sort=downloads"</pre>
+      <h2>Fair use</h2>
+      <p>Please cache what you can and keep it under a few requests per second. Respect each file's license when you use or recommend it, and link back to the file page so people can see the terms.</p>`;
+    },
+  },
+
   donate: {
     title: 'Donate',
     lead: (c) => `${c.siteName} has no ads and no paid tier. Donations pay for storage and bandwidth, and nothing else.`,
@@ -168,14 +193,14 @@ const PAGES = {
 function staticPage(ctx, { page, stats }) {
   const p = PAGES[page];
   const body = html`
-  <div class="wrap narrow">
+  <div class="container narrow">
     <header class="pagehead doc-head">
       <div>
         <h1>${p.title}</h1>
         <p class="lede">${p.lead(ctx.config)}</p>
       </div>
     </header>
-    <article class="prose doc">${p.body(ctx.config, stats, ctx.catalog)}</article>
+    <article class="prose doc">${p.body(ctx.config, stats, ctx.catalog, ctx.absolute(''))}</article>
   </div>`;
   return layout(ctx, { title: p.title, description: p.lead(ctx.config), body, og: { url: ctx.absolute(`/${page}`) } });
 }

@@ -137,7 +137,12 @@ test('rejects bad types, sizes, fields and fake thumbnails', async () => {
   res = await alice.post('/api/uploads', { files: [{ field: 'file', name: 'x.mp4', size: 5000 }] });
   srv.config.userQuota = quota;
   assert.equal(res.status, 413);
+  // Anonymous uploads are on by default; with them switched off, logging in is required.
   res = await anon.post('/api/uploads', { files: [{ field: 'file', name: 'x.mp4', size: 5 }] });
+  assert.equal(res.status, 201);
+  srv.config.anonUploads = false;
+  res = await anon.post('/api/uploads', { files: [{ field: 'file', name: 'x.mp4', size: 5 }] });
+  srv.config.anonUploads = true;
   assert.equal(res.status, 401);
 
   res = await alice.createAsset(baseFields({ title: '', category: 'nope' }), { file: fakeVideo });
@@ -189,7 +194,7 @@ test('only the owner or a moderator can edit or delete', async () => {
   const { slug } = (await alice.createAsset(baseFields({ title: 'Alice Asset' }), { file: fakeVideo })).json_;
   assert.equal((await bob.post(`/api/assets/${slug}/edit`, baseFields())).status, 403);
   assert.equal((await bob.post(`/api/assets/${slug}/delete`)).status, 403);
-  assert.equal((await anon.post(`/api/assets/${slug}/delete`)).status, 401);
+  assert.equal((await anon.post(`/api/assets/${slug}/delete`)).status, 403);
   assert.ok((await srv.models.assets.rowBySlug(slug)));
 });
 

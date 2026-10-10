@@ -29,6 +29,11 @@ Upload footage, transitions, overlays, LUTs, project templates, MOGRTs, sound ef
 ## Features
 
 - Drag-and-drop uploads up to 2 GB (configurable), with resumable parts, progress, speed and ETA
+- Upload with an account or anonymously (anonymous uploads get a private manage link to edit or delete)
+- Private links: make a link expire after any number of minutes, hours or days, cap the number of downloads, or lock the file with a password
+- Profiles with photos and social links (YouTube, TikTok, Instagram, X, Twitch, Vimeo, Behance, ArtStation, Discord)
+- Sign in with Google or TikTok, or a username and password
+- Open to search engines and AI assistants: sitemap index, `robots.txt` that welcomes AI crawlers, `/llms.txt`, and a public JSON API documented at `/developers`
 - A short share link for every asset, a direct-download link, and a public or **unlisted** option
 - Upload a **new version** without breaking the link
 - In-browser thumbnail frame picker; server-side previews for ProRes/MKV/AIFF and other formats browsers can't play

@@ -1,11 +1,14 @@
-/* ClipFX in the browser. Every page works without this file; it adds menus, copy buttons,
-   hover previews, saving without a reload, and the direct-to-storage uploader. */
+/* ClipFX in the browser. Every page works without this file; it adds the search palette, theme
+   switching, motion, loading states, toasts, copy and share, live countdowns, profile photos and
+   the direct-to-storage uploader. */
 (function () {
   'use strict';
 
   const $ = (sel, root = document) => root.querySelector(sel);
   const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
-  const mobile = window.matchMedia('(max-width: 879px)');
+  const root = document.documentElement;
+  const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  root.classList.add('js');
 
   function formatBytes(bytes) {
     const units = ['B', 'KB', 'MB', 'GB', 'TB'];
@@ -23,50 +26,132 @@
     return h ? `${h}:${String(m).padStart(2, '0')}:${sec}` : `${m}:${sec}`;
   }
 
-  // ---- Menus, header search, flash ----------------------------------------------------
+  // ---- Toasts ---------------------------------------------------------------------------
+
+  const toastBox = $('[data-toasts]');
+  const ICON_OK = '<svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>';
+  const ICON_ERR = '<svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4 2.8 19.5h18.4z"/><path d="M12 10v4M12 17h.01"/></svg>';
+  function dismissToast(el) {
+    if (!el || el.classList.contains('is-leaving')) return;
+    el.classList.add('is-leaving');
+    setTimeout(() => el.remove(), 260);
+  }
+  function toast(message, type = 'ok') {
+    if (!toastBox || !message) return;
+    const el = document.createElement('div');
+    el.className = `toast ${type === 'error' ? 'toast-error' : 'toast-ok'}`;
+    el.setAttribute('role', 'status');
+    el.innerHTML = `${type === 'error' ? ICON_ERR : ICON_OK}<span></span>`;
+    el.querySelector('span').textContent = message;
+    toastBox.appendChild(el);
+    while (toastBox.children.length > 3) toastBox.firstElementChild.remove();
+    setTimeout(() => dismissToast(el), 3200);
+  }
+  // Messages rendered by the server (after a form post) fade away on their own.
+  $$('[data-toast]').forEach((el) => setTimeout(() => dismissToast(el), 5000));
+  document.addEventListener('click', (e) => {
+    const x = e.target.closest('[data-dismiss]');
+    if (x) dismissToast(x.closest('.toast'));
+  });
+
+  // ---- Theme ------------------------------------------------------------------------------
+
+  function currentTheme() {
+    const set = root.getAttribute('data-theme');
+    if (set) return set;
+    return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+  }
+  $$('[data-theme-toggle]').forEach((btn) => btn.addEventListener('click', () => {
+    const next = currentTheme() === 'dark' ? 'light' : 'dark';
+    root.setAttribute('data-theme', next);
+    document.cookie = `theme=${next}; path=/; max-age=31536000; samesite=lax`;
+    const meta = $$('meta[name="theme-color"]');
+    meta.forEach((m) => m.setAttribute('content', next === 'dark' ? '#07080d' : '#f5f7fb'));
+  }));
+
+  // ---- Header, menus, page progress -------------------------------------------------------
+
+  const header = $('[data-header]');
+  if (header) {
+    const onScroll = () => header.classList.toggle('is-scrolled', window.scrollY > 4);
+    window.addEventListener('scroll', onScroll, { passive: true });
+    onScroll();
+  }
 
   const menus = $$('[data-menu]');
   const closeMenus = (except) => menus.forEach((m) => { if (m !== except) m.removeAttribute('open'); });
   menus.forEach((m) => m.addEventListener('toggle', () => { if (m.open) closeMenus(m); }));
+  document.addEventListener('click', (e) => { if (!e.target.closest('[data-menu]')) closeMenus(); });
 
-  const topSearch = $('[data-topsearch]');
-  const searchToggle = $('[data-search-toggle]');
-  if (topSearch && searchToggle) {
-    searchToggle.setAttribute('role', 'button');
-    searchToggle.setAttribute('aria-expanded', 'false');
-    searchToggle.addEventListener('click', (e) => {
-      e.preventDefault();
-      const open = topSearch.classList.toggle('is-open');
-      searchToggle.setAttribute('aria-expanded', String(open));
-      if (open) { closeMenus(); $('input', topSearch).focus(); }
-    });
+  // A thin bar across the top while the next page loads.
+  const bar = $('[data-progress-bar]');
+  function startProgress() {
+    if (!bar) return;
+    bar.classList.remove('is-done');
+    void bar.offsetWidth;
+    bar.classList.add('is-active');
   }
-  const closeSearch = () => {
-    if (topSearch && topSearch.classList.contains('is-open')) {
-      topSearch.classList.remove('is-open');
-      searchToggle.setAttribute('aria-expanded', 'false');
-    }
-  };
-
+  function endProgress() {
+    if (!bar || !bar.classList.contains('is-active')) return;
+    bar.classList.remove('is-active');
+    bar.classList.add('is-done');
+  }
+  window.addEventListener('pageshow', () => {
+    endProgress();
+    $$('.is-loading').forEach((b) => { b.classList.remove('is-loading'); b.disabled = false; });
+  });
   document.addEventListener('click', (e) => {
-    if (!e.target.closest('[data-menu]')) closeMenus();
-    if (!e.target.closest('[data-topsearch], [data-search-toggle]')) closeSearch();
-    const dismiss = e.target.closest('[data-dismiss]');
-    if (dismiss) dismiss.closest('.flash').remove();
+    const a = e.target.closest('a[href]');
+    if (!a || e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    if (a.target === '_blank' || a.hasAttribute('download') || a.hasAttribute('data-palette-open')) return;
+    const url = new URL(a.href, location.href);
+    if (url.origin !== location.origin || (url.pathname === location.pathname && url.search === location.search)) return;
+    if (/\/download$/.test(url.pathname)) return;
+    startProgress();
+    if (a.hasAttribute('data-loading') && a.classList.contains('btn')) a.classList.add('is-loading');
   });
-  document.addEventListener('keydown', (e) => {
-    if (e.key !== 'Escape') return;
-    const open = menus.find((m) => m.open);
-    if (open) { open.removeAttribute('open'); $('summary', open).focus(); }
-    closeSearch();
-  });
-  mobile.addEventListener('change', () => { closeMenus(); closeSearch(); });
 
-  // ---- Forms: confirmations and auto-submitting filters ----------------------------------
+  // ---- Search palette -------------------------------------------------------------------------
+
+  const palette = $('[data-palette]');
+  function openPalette() {
+    if (!palette || typeof palette.showModal !== 'function') return false;
+    closeMenus();
+    if (!palette.open) palette.showModal();
+    const input = $('input', palette);
+    input.focus();
+    input.select();
+    return true;
+  }
+  $$('[data-palette-open]').forEach((el) => el.addEventListener('click', (e) => { if (openPalette()) e.preventDefault(); }));
+  if (palette) {
+    $('[data-palette-close]', palette).addEventListener('click', () => palette.close());
+    palette.addEventListener('click', (e) => { if (e.target === palette) palette.close(); });
+  }
+  document.addEventListener('keydown', (e) => {
+    const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName) || document.activeElement.isContentEditable;
+    if ((e.key === '/' && !typing) || (e.key.toLowerCase() === 'k' && (e.metaKey || e.ctrlKey))) {
+      if (openPalette()) e.preventDefault();
+    }
+    if (e.key === 'Escape') {
+      const open = menus.find((m) => m.open);
+      if (open) { open.removeAttribute('open'); $('summary', open).focus(); }
+    }
+  });
+
+  // ---- Forms: confirmations, loading states, auto-submitting filters ----------------------------
 
   document.addEventListener('submit', (e) => {
     const f = e.target;
-    if (f.dataset.confirm && !window.confirm(f.dataset.confirm)) e.preventDefault();
+    if (f.dataset.confirm && !window.confirm(f.dataset.confirm)) { e.preventDefault(); return; }
+    if (e.defaultPrevented || f.hasAttribute('data-upload-form') || f.hasAttribute('data-save-form')) return;
+    const btn = e.submitter || $('[type="submit"]', f);
+    if (btn && btn.classList.contains('btn')) {
+      btn.classList.add('is-loading');
+      // Disabled after the event so the browser still sends the button's value.
+      setTimeout(() => { btn.disabled = true; }, 0);
+    }
+    if ((f.method || 'get').toLowerCase() === 'get' || !f.target) startProgress();
   });
 
   $$('[data-autosubmit]').forEach((f) => {
@@ -82,7 +167,78 @@
     });
   }
 
-  // ---- Copy & share -------------------------------------------------------------------
+  // ---- Motion: reveal on scroll, image fade-in, count-up --------------------------------------------
+
+  const reveal = $$('[data-reveal]');
+  if ('IntersectionObserver' in window && !reduceMotion) {
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach((en) => {
+        if (!en.isIntersecting) return;
+        en.target.classList.add('is-in');
+        io.unobserve(en.target);
+      });
+    }, { rootMargin: '0px 0px -40px 0px', threshold: 0.05 });
+    // Stagger siblings so a grid fills in left to right.
+    const counts = new Map();
+    reveal.forEach((el) => {
+      const n = counts.get(el.parentElement) || 0;
+      counts.set(el.parentElement, n + 1);
+      el.style.setProperty('--d', `${Math.min(n, 8) * 45}ms`);
+      io.observe(el);
+    });
+  } else {
+    reveal.forEach((el) => el.classList.add('is-in'));
+  }
+
+  $$('.card-media img, .row-thumb img').forEach((img) => {
+    const done = () => img.parentElement.classList.add('is-loaded');
+    if (img.complete && img.naturalWidth) done();
+    else {
+      img.addEventListener('load', done, { once: true });
+      img.addEventListener('error', done, { once: true });
+    }
+  });
+
+  $$('[data-count]').forEach((el) => {
+    const target = Number(el.dataset.count);
+    if (!target || reduceMotion || target > 1e6) return;
+    const start = performance.now();
+    const dur = 900;
+    const step = (t) => {
+      const p = Math.min(1, (t - start) / dur);
+      const v = Math.round(target * (1 - (1 - p) ** 3));
+      el.textContent = v >= 1000 ? `${(v / 1000).toFixed(v < 10000 ? 1 : 0).replace(/\.0$/, '')}k` : String(v);
+      if (p < 1) requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+  });
+
+  // ---- Live countdowns ("expires in 4m 12s") ----------------------------------------------------------
+
+  function remaining(ms) {
+    if (ms <= 0) return 'now';
+    const s = Math.floor(ms / 1000);
+    const d = Math.floor(s / 86400);
+    const h = Math.floor((s % 86400) / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    const sec = s % 60;
+    if (d) return `in ${d}d ${h}h`;
+    if (h) return `in ${h}h ${m}m`;
+    if (m) return `in ${m}m ${String(sec).padStart(2, '0')}s`;
+    return `in ${sec}s`;
+  }
+  const timers = $$('[data-expires]');
+  if (timers.length) {
+    const tick = () => timers.forEach((el) => {
+      const left = Number(el.dataset.expires) - Date.now();
+      el.textContent = remaining(left);
+      el.title = new Date(Number(el.dataset.expires)).toLocaleString();
+    });
+    tick();
+    setInterval(tick, 1000);
+  }
+
+  // ---- Copy & share -------------------------------------------------------------------------------
 
   async function copyText(text) {
     try {
@@ -103,32 +259,22 @@
   }
 
   document.addEventListener('click', async (e) => {
-    const btn = e.target.closest('[data-copy]');
+    const btn = e.target.closest('[data-copy], [data-share]');
     if (!btn) return;
-    const label = $('span', btn);
-    if (label && !btn.dataset.label) btn.dataset.label = label.textContent;
-    const ok = await copyText(btn.dataset.copy);
-    btn.classList.add('is-copied');
-    if (label) label.textContent = ok ? 'Copied' : 'Copy failed';
-    clearTimeout(btn.copyTimer);
-    btn.copyTimer = setTimeout(() => {
-      btn.classList.remove('is-copied');
-      if (label) label.textContent = btn.dataset.label;
-    }, 1600);
+    // Native share sheet on phones; copying the link everywhere else.
+    if (btn.hasAttribute('data-share') && navigator.share && window.matchMedia('(pointer: coarse)').matches) {
+      navigator.share({ title: btn.dataset.shareTitle, url: btn.dataset.shareUrl }).catch(() => {});
+      return;
+    }
+    const text = btn.dataset.copy || btn.dataset.shareUrl;
+    if (!text) return;
+    const ok = await copyText(text);
+    toast(ok ? 'Copied to clipboard' : 'Couldn\'t copy. Select the text and copy it.', ok ? 'ok' : 'error');
   });
 
   $$('[data-select-on-focus]').forEach((el) => el.addEventListener('focus', () => el.select()));
 
-  if (navigator.share) {
-    $$('[data-share]').forEach((btn) => {
-      btn.hidden = false;
-      btn.addEventListener('click', () => {
-        navigator.share({ title: btn.dataset.shareTitle, url: btn.dataset.shareUrl }).catch(() => {});
-      });
-    });
-  }
-
-  // ---- Password visibility -------------------------------------------------------------
+  // ---- Password visibility -----------------------------------------------------------------------
 
   $$('[data-toggle-password]').forEach((btn) => {
     btn.addEventListener('click', () => {
@@ -140,9 +286,9 @@
     });
   });
 
-  // ---- Video previews when hovering a card ----------------------------------------------
+  // ---- Video previews when hovering a card ------------------------------------------------------------
 
-  if (window.matchMedia('(hover: hover) and (pointer: fine)').matches && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+  if (window.matchMedia('(hover: hover) and (pointer: fine)').matches && !reduceMotion) {
     $$('.card[data-preview]').forEach((card) => {
       let video = null;
       let timer = null;
@@ -152,7 +298,6 @@
           Object.assign(video, { src: card.dataset.preview, muted: true, loop: true, playsInline: true, preload: 'auto' });
           video.setAttribute('aria-hidden', 'true');
           video.style.opacity = '0';
-          video.style.transition = 'opacity .2s';
           video.addEventListener('playing', () => { video.style.opacity = '1'; });
           $('.card-media', card).appendChild(video);
           video.play().catch(() => {});
@@ -165,13 +310,13 @@
     });
   }
 
-  // ---- Save without a reload -------------------------------------------------------------
+  // ---- Save without a reload ----------------------------------------------------------------------
 
   $$('[data-save-form]').forEach((f) => {
     f.addEventListener('submit', async (e) => {
       e.preventDefault();
       const btn = $('[data-save-btn]', f);
-      btn.disabled = true;
+      btn.classList.add('is-loading');
       try {
         const res = await fetch(f.dataset.api, {
           method: 'POST',
@@ -186,15 +331,16 @@
         $('span', btn).textContent = data.saved ? 'Saved' : 'Save';
         const count = $('[data-save-count]');
         if (count) count.textContent = data.count;
+        toast(data.saved ? 'Saved to your list' : 'Removed from saved');
       } catch {
         f.submit();
       } finally {
-        btn.disabled = false;
+        btn.classList.remove('is-loading');
       }
     });
   });
 
-  // ---- Tag preview ---------------------------------------------------------------------------
+  // ---- Tag preview ---------------------------------------------------------------------------------
 
   $$('[data-tags-input]').forEach((input) => {
     const preview = $('[data-tags-preview]', input.parentElement);
@@ -202,7 +348,7 @@
       const tags = [...new Set(input.value.split(/[,#\n]/).map((t) => t.trim().toLowerCase()).filter((t) => t.length >= 2))].slice(0, 15);
       preview.replaceChildren(...tags.map((t) => {
         const s = document.createElement('span');
-        s.className = 'tagchip';
+        s.className = 'chip';
         s.textContent = `#${t}`;
         return s;
       }));
@@ -211,7 +357,92 @@
     render();
   });
 
-  // ---- Upload and edit form ----------------------------------------------------------------
+  // ---- Link settings: expiry controls ------------------------------------------------------------------
+
+  // Reads the expiry, limit and password fields into what the API expects.
+  function linkSettings(form) {
+    const val = (name) => { const el = form.elements[name]; return el ? el.value : ''; };
+    const expiry = (form.querySelector('[name=expiry]:checked') || {}).value || 'never';
+    const out = { expiry, maxDownloads: val('maxDownloads'), password: val('password') };
+    if (form.elements.removePassword) out.removePassword = form.elements.removePassword.checked;
+    if (expiry === 'after') {
+      const minutes = Math.round(Number(val('expiryAmount')) * Number(val('expiryUnit') || 1));
+      out.expiresIn = minutes > 0 ? String(minutes) : '';
+    }
+    if (form.elements.manageKey) out.manageKey = form.elements.manageKey.value;
+    return out;
+  }
+
+  $$('[data-expiry]').forEach((box) => {
+    const form = box.closest('form');
+    const after = $('[data-expiry-after]', box);
+    const quick = $('[data-expiry-quick]', box);
+    const hidden = $('[data-expires-in]', box);
+    const amount = $('[name=expiryAmount]', box);
+    const unit = $('[name=expiryUnit]', box);
+    const sync = () => {
+      const mode = (form.querySelector('[name=expiry]:checked') || {}).value;
+      const on = mode === 'after';
+      after.hidden = !on;
+      quick.hidden = !on;
+      const minutes = Math.round(Number(amount.value) * Number(unit.value || 1));
+      hidden.value = on && minutes > 0 ? String(minutes) : '';
+      $$('[data-minutes]', quick).forEach((b) => b.classList.toggle('is-on', on && Number(b.dataset.minutes) === minutes));
+    };
+    $$('[name=expiry]', form).forEach((r) => r.addEventListener('change', sync));
+    [amount, unit].forEach((el) => el.addEventListener('input', sync));
+    $$('[data-minutes]', quick).forEach((b) => b.addEventListener('click', () => {
+      const m = Number(b.dataset.minutes);
+      if (m % 1440 === 0) { amount.value = m / 1440; unit.value = '1440'; } else if (m % 60 === 0) { amount.value = m / 60; unit.value = '60'; } else { amount.value = m; unit.value = '1'; }
+      sync();
+    }));
+    sync();
+  });
+
+  // ---- Profile photo ----------------------------------------------------------------------------------
+
+  const avatarBox = $('[data-avatar-edit]');
+  if (avatarBox) {
+    const input = $('[data-avatar-input]', avatarBox);
+    const csrf = avatarBox.dataset.csrf;
+    const post = async (path, body) => {
+      const res = await fetch(path, {
+        method: 'POST', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'X-CSRF-Token': csrf },
+        body: JSON.stringify(body || {}),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.ok) throw new Error(data.error || 'Upload failed.');
+      return data;
+    };
+    input.addEventListener('change', async () => {
+      const file = input.files[0];
+      if (!file) return;
+      if (file.size > 5 * 1024 * 1024) { toast('That image is over 5 MB.', 'error'); input.value = ''; return; }
+      const preview = $('[data-avatar-preview]', avatarBox);
+      const local = URL.createObjectURL(file);
+      preview.innerHTML = '<span class="avatar xl"><img alt=""></span>';
+      $('img', preview).src = local;
+      avatarBox.classList.add('is-busy');
+      const label = $('label.btn', avatarBox);
+      label.classList.add('is-loading');
+      try {
+        const { uploads } = await post('/api/uploads', { files: [{ field: 'avatar', name: file.name, size: file.size }] });
+        const t = uploads[0];
+        const put = await fetch(t.url, { method: 'PUT', headers: t.headers, body: file });
+        if (!put.ok) throw new Error('Upload failed.');
+        await post('/api/me/avatar', { upload: t.id });
+        toast('Profile photo updated');
+        setTimeout(() => location.reload(), 600);
+      } catch (err) {
+        toast(err.message, 'error');
+        avatarBox.classList.remove('is-busy');
+        label.classList.remove('is-loading');
+      }
+    });
+  }
+
+  // ---- Upload and edit form -------------------------------------------------------------------------
 
   const uploadForm = $('[data-upload-form]');
   if (uploadForm) initUpload(uploadForm);
@@ -451,7 +682,10 @@
     async function api(path, body) {
       const res = await fetch(path, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'X-CSRF-Token': form.dataset.csrf },
+        headers: {
+          'Content-Type': 'application/json', Accept: 'application/json', 'X-CSRF-Token': form.dataset.csrf,
+          ...(form.dataset.manageKey ? { 'X-Manage-Key': form.dataset.manageKey } : {}),
+        },
         credentials: 'same-origin',
         body: JSON.stringify(body || {}),
       });
@@ -539,6 +773,7 @@
         software: $$('[name=software]:checked', form).map((el) => el.value),
         rights: on('rights'), removeThumb: on('removeThumb'), removePreview: on('removePreview'),
         keepThumb: on('keepThumb'), keepPreview: on('keepPreview'),
+        ...linkSettings(form),
         width: Number(meta('width').value) || undefined,
         height: Number(meta('height').value) || undefined,
         duration: Number(meta('duration').value) || undefined,
@@ -586,6 +821,7 @@
       cancelled = false;
       tickets.length = 0;
       submitBtn.disabled = true;
+      submitBtn.classList.add('is-loading');
       progress.hidden = false;
       progressFill.style.width = '0';
       progressText.textContent = 'Preparing';
@@ -616,14 +852,18 @@
         busy = false;
         progressFill.style.width = '100%';
         progressText.textContent = 'Done. Opening your asset';
-        window.location.href = isEdit ? (saved.url || form.dataset.redirect) : `${saved.url}?uploaded=1`;
+        progressText.textContent = 'Done';
+        window.location.href = isEdit ? (form.dataset.redirect || saved.url)
+          : `${saved.url}?uploaded=1${saved.manageKey ? `&key=${encodeURIComponent(saved.manageKey)}` : ''}`;
       } catch (err) {
         busy = false;
         submitBtn.disabled = false;
+        submitBtn.classList.remove('is-loading');
         progress.hidden = true;
         if (cancelled || err.message === 'cancelled') { showError('Upload cancelled.'); return; }
         if (err.errors) showFieldErrors(err.errors);
         showError(err.message === 'network' ? 'Network error. Check your connection and try again.' : err.message);
+        toast(err.message === 'network' ? 'Upload failed: network error' : 'Upload failed', 'error');
       }
     });
   }

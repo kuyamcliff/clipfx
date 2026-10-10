@@ -14,7 +14,7 @@ module.exports = function adminRoutes(app, ctx) {
     if (tab === 'assets') data.result = await models.assets.list({ q, includeUnlisted: true, includeBanned: true, page, perPage: 50 });
     if (tab === 'removed') data.result = await models.assets.list({ anyStatus: true, status: 'removed', includeUnlisted: true, includeBanned: true, page, perPage: 50 });
     if (tab === 'users') {
-      data.users = (await models.users.search(q, 100)).map((u) => ({ ...ctx.publicUser(u), email: u.email || '', asset_count: u.asset_count }));
+      data.users = await Promise.all((await models.users.search(q, 100)).map(async (u) => ({ ...(await ctx.publicUser(u)), email: u.email || '', asset_count: u.asset_count })));
     }
     res.ok(data);
   });
@@ -74,6 +74,7 @@ module.exports = function adminRoutes(app, ctx) {
     const u = await models.users.byId(Number(req.params.id));
     if (!u) { res.fail(404, 'That user no longer exists.'); return null; }
     if (u.id === req.user.id) { res.fail(400, 'You can’t do that to your own account.'); return null; }
+    if (u.is_system) { res.fail(400, 'That’s the account anonymous uploads belong to. Remove individual uploads instead.'); return null; }
     return u;
   };
 

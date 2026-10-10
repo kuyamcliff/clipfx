@@ -22,10 +22,27 @@ function sanitizeFileName(name) {
 }
 
 module.exports = function uploadRoutes(app, ctx) {
-  const { models, config, storage, rate, requireUser } = ctx;
+  const { models, config, storage, rate, cookieBase } = ctx;
+  const sha = (s) => crypto.createHash('sha256').update(String(s)).digest('hex');
+
+  // Who is uploading: the logged-in user, or (when allowed) the shared anonymous account plus a
+  // per-browser key, so one anonymous visitor can't touch another's pending uploads.
+  ctx.uploader = async (req, res, next) => {
+    if (req.user) { req.uploader = req.user; return next(); }
+    if (!config.anonUploads) return res.fail(401, 'Log in to upload.');
+    let key = req.cookies.anon;
+    if (!key || key.length < 20) {
+      key = crypto.randomBytes(24).toString('base64url');
+      res.cookie('anon', key, { ...cookieBase, maxAge: 30 * 24 * 3600 * 1000 });
+    }
+    req.anonHash = sha(key);
+    req.uploader = await models.users.anonymous();
+    return next();
+  };
 
   const FIELDS = {
-    file: { prefix: 'f', max: () => config.maxUpload, allowed: (ext) => !!FILE_TYPES[ext] },
+    file: { prefix: 'f', max: (req) => (req.user ? config.maxUpload : Math.min(config.maxUpload, config.anonMaxUpload)), allowed: (ext) => !!FILE_TYPES[ext] },
+    avatar: { prefix: 'v', max: () => 5 * 1024 * 1024, allowed: (ext) => THUMB_EXTS.includes(ext), accountOnly: true },
     preview: { prefix: 'p', max: () => config.maxPreview, allowed: (ext) => PREVIEW_EXTS.includes(ext) },
     thumbnail: { prefix: 't', max: () => config.maxThumb, allowed: (ext) => THUMB_EXTS.includes(ext) },
   };
@@ -37,7 +54,7 @@ module.exports = function uploadRoutes(app, ctx) {
     return t && t.inline ? t.mime : 'application/octet-stream';
   }
 
-  app.post('/api/uploads', requireUser, rate('upload-tickets', 120, 3600 * 1000), async (req, res) => {
+  app.post('/api/uploads', ctx.uploader, rate('upload-tickets', 120, 3600 * 1000), async (req, res) => {
     if (!config.uploadsEnabled) return res.fail(503, 'Uploads aren’t open yet. Please check back soon.');
     const files = Array.isArray(req.body.files) ? req.body.files : [];
     if (!files.length || files.length > 3) return res.fail(400, 'Send between one and three files.');
@@ -50,21 +67,27 @@ module.exports = function uploadRoutes(app, ctx) {
       const ext = extOf(name);
       const size = Number(f.size);
       if (!rule || seen.has(field)) { errors[field || 'file'] = 'Unexpected file.'; return null; }
+      if (rule.accountOnly && !req.user) { errors[field] = 'Log in first.'; return null; }
       seen.add(field);
       if (!ext || !rule.allowed(ext)) {
         errors[field] = field === 'file'
           ? (ext ? `.${ext} files aren’t accepted. Zip it up, or check the list of formats.` : 'That file needs an extension, like .mp4 or .zip.')
-          : field === 'preview' ? 'Previews must be MP4, WebM, MOV, PNG, JPG, GIF or WebP.' : 'Thumbnails must be PNG, JPG, WebP or GIF.';
+          : field === 'preview' ? 'Previews must be MP4, WebM, MOV, PNG, JPG, GIF or WebP.' : 'Images must be PNG, JPG, WebP or GIF.';
         return null;
       }
       if (!Number.isInteger(size) || size <= 0) { errors[field] = 'That file is empty.'; return null; }
-      if (size > rule.max()) { errors[field] = `That file is too large. The limit is ${formatBytes(rule.max())}.`; return null; }
+      if (size > rule.max(req)) {
+        errors[field] = !req.user && field === 'file' && size <= config.maxUpload
+          ? `Anonymous uploads can be up to ${formatBytes(rule.max(req))}. Create a free account to upload up to ${formatBytes(config.maxUpload)}.`
+          : `That file is too large. The limit is ${formatBytes(rule.max(req))}.`;
+        return null;
+      }
       return { field, name, ext, size, rule };
     });
     if (Object.keys(errors).length) return res.fail(400, Object.values(errors)[0], errors);
 
     const total = specs.reduce((n, s) => n + s.size, 0);
-    if (await models.users.storageUsed(req.user.id) + total > config.userQuota) {
+    if (req.user && await models.users.storageUsed(req.user.id) + total > config.userQuota) {
       return res.fail(413, `This would go over your ${formatBytes(config.userQuota)} storage limit. Delete old uploads to make room.`, { file: 'Not enough storage left.' });
     }
 
@@ -84,19 +107,19 @@ module.exports = function uploadRoutes(app, ctx) {
           const len = n < count ? partSize : s.size - partSize * (count - 1);
           parts.push({ number: n, size: len, url: await storage.presignPart(key, multipartId, n, len) });
         }
-        await models.uploads.create({ id, userId: req.user.id, key, field: s.field, fileName: s.name, ext: s.ext, size: s.size, contentType, multipartId, partSize });
+        await models.uploads.create({ id, userId: req.uploader.id, anonHash: req.anonHash, key, field: s.field, fileName: s.name, ext: s.ext, size: s.size, contentType, multipartId, partSize });
         tickets.push({ id, field: s.field, method: 'multipart', partSize, parts });
       } else {
         const { url, headers } = await storage.presignPut(key, { contentType, contentLength: s.size, contentDisposition });
-        await models.uploads.create({ id, userId: req.user.id, key, field: s.field, fileName: s.name, ext: s.ext, size: s.size, contentType });
+        await models.uploads.create({ id, userId: req.uploader.id, anonHash: req.anonHash, key, field: s.field, fileName: s.name, ext: s.ext, size: s.size, contentType });
         tickets.push({ id, field: s.field, method: 'put', url, headers });
       }
     }
     return res.ok({ uploads: tickets }, 201);
   });
 
-  app.post('/api/uploads/:id/complete', requireUser, async (req, res) => {
-    const u = await models.uploads.get(req.params.id, req.user.id);
+  app.post('/api/uploads/:id/complete', ctx.uploader, async (req, res) => {
+    const u = await models.uploads.get(req.params.id, req.uploader.id, req.anonHash);
     if (!u) return res.fail(404, 'Upload not found. It may have expired; please start again.');
     if (!u.multipart_id) return res.ok();
     const parts = (Array.isArray(req.body.parts) ? req.body.parts : [])
@@ -116,8 +139,8 @@ module.exports = function uploadRoutes(app, ctx) {
     return res.ok();
   });
 
-  app.post('/api/uploads/:id/abort', requireUser, async (req, res) => {
-    const u = await models.uploads.get(req.params.id, req.user.id);
+  app.post('/api/uploads/:id/abort', ctx.uploader, async (req, res) => {
+    const u = await models.uploads.get(req.params.id, req.uploader.id, req.anonHash);
     if (u) {
       if (u.multipart_id) await storage.abortMultipart(u.key, u.multipart_id);
       await storage.remove(u.key);
@@ -129,12 +152,12 @@ module.exports = function uploadRoutes(app, ctx) {
   // Turns upload IDs into verified objects. Returns { files, errors }.
   // Every object is checked in storage: it must exist with exactly the size that was approved,
   // and inline previews/thumbnails must really be images or video (magic bytes).
-  ctx.claimUploads = async function claimUploads(user, ids = {}) {
+  ctx.claimUploads = async function claimUploads(user, ids = {}, anonHash) {
     const files = {};
     const errors = {};
-    for (const field of ['file', 'preview', 'thumbnail']) {
+    for (const field of ['file', 'preview', 'thumbnail', 'avatar']) {
       if (!ids[field]) continue;
-      const u = await models.uploads.get(ids[field], user.id);
+      const u = await models.uploads.get(ids[field], user.id, anonHash);
       if (!u || u.field !== field) { errors[field] = 'That upload has expired. Please choose the file again.'; continue; }
       if (u.multipart_id) { errors[field] = 'That upload didn’t finish. Please try again.'; continue; }
       const st = await storage.stat(u.key);
@@ -143,8 +166,9 @@ module.exports = function uploadRoutes(app, ctx) {
       let sniffed = null;
       if (field !== 'file') {
         sniffed = require('../storage').sniff(await storage.readRange(u.key, 0, 15));
-        const ok = field === 'thumbnail' ? ['png', 'jpg', 'gif', 'webp'].includes(sniffed) : !!sniffed;
-        if (!ok) { errors[field] = field === 'thumbnail' ? 'That thumbnail isn’t a valid image.' : 'That preview isn’t a valid image or video.'; continue; }
+        const imageOnly = field === 'thumbnail' || field === 'avatar';
+        const ok = imageOnly ? ['png', 'jpg', 'gif', 'webp'].includes(sniffed) : !!sniffed;
+        if (!ok) { errors[field] = imageOnly ? 'That isn’t a valid image.' : 'That preview isn’t a valid image or video.'; continue; }
       }
       files[field] = { upload: u, sniffed };
     }
