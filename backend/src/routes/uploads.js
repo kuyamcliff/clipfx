@@ -75,6 +75,8 @@ module.exports = function uploadRoutes(app, ctx) {
           : field === 'preview' ? 'Previews must be MP4, WebM, MOV, PNG, JPG, GIF or WebP.' : 'Images must be PNG, JPG, WebP or GIF.';
         return null;
       }
+      // Programs can do real harm, so they need an account behind them (and can be traced and banned).
+      if (field === 'file' && FILE_TYPES[ext].kind === 'software' && !req.user) { errors[field] = 'Log in to upload software. Anonymous uploads can’t include programs or plugins.'; return null; }
       if (!Number.isInteger(size) || size <= 0) { errors[field] = 'That file is empty.'; return null; }
       if (size > rule.max(req)) {
         errors[field] = !req.user && field === 'file' && size <= config.maxUpload

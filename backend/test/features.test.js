@@ -153,3 +153,22 @@ test('profile photo and social links', async () => {
   assert.equal(r.status, 200);
   assert.equal((await alice.get('/api/session')).json_.user.avatar_url, null);
 });
+
+test('software uploads: accepted from accounts, published with a SHA-256 to check', async () => {
+  const exe = Buffer.concat([Buffer.from('MZ'), Buffer.alloc(4096, 1)]);
+  const res = await alice.createAsset(baseFields({ title: 'Frame Counter Tool', category: 'software', software: [] }), { file: { name: 'FrameCounter Setup.exe', data: exe } });
+  assert.equal(res.status, 201, res.body_);
+  const { slug } = res.json_;
+  let a;
+  for (let i = 0; i < 40; i++) {
+    a = (await client(srv.base).get(`/api/assets/${slug}`)).json_.asset;
+    if (a.sha256) break;
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  assert.equal(a.file_kind, 'software');
+  assert.equal(a.category.id || a.category, 'software');
+  assert.equal(a.sha256, require('node:crypto').createHash('sha256').update(exe).digest('hex'));
+  // Other kinds keep their hash private.
+  const vid = await alice.createAsset(baseFields({ title: 'Plain clip' }), { file: fakeVideo });
+  assert.equal((await client(srv.base).get(`/api/assets/${vid.json_.slug}`)).json_.asset.sha256, null);
+});

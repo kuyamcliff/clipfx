@@ -45,6 +45,20 @@ function linkStatus(a) {
   </div>`;
 }
 
+// Programs can harm a computer, so software pages say so and hand over the file hash to check.
+function softwareCheck(a) {
+  return html`<div class="swcheck">
+    <p class="swcheck-head">${icon('shield')}<strong>Software: check before you run it</strong></p>
+    <p>Only run programs from creators you trust. ${a.anonymous ? '' : html`This was shared by <a href="/u/${a.username}">@${a.username}</a>. `}Report anything suspicious.</p>
+    ${a.sha256 ? html`<p class="swcheck-label">SHA-256</p>
+    <code class="swcheck-hash" data-select-on-focus tabindex="0">${a.sha256}</code>
+    <div class="swcheck-actions">
+      <a class="btn btn-secondary btn-sm" href="https://www.virustotal.com/gui/file/${a.sha256}" target="_blank" rel="noopener nofollow">${icon('shield')}<span>Check on VirusTotal</span></a>
+      <button type="button" class="link-quiet" data-copy="${a.sha256}">${icon('copy')}<span>Copy hash</span></button>
+    </div>` : html`<p class="swcheck-label">The file hash appears here once processing finishes.</p>`}
+  </div>`;
+}
+
 function asset(ctx, { asset: a, more, related, saved, shareUrl, justUploaded, manageKey }) {
   const { user } = ctx;
   const credit = `"${a.title}" by ${a.anonymous ? 'an anonymous creator' : a.display_name} (${shareUrl}), licensed under ${a.license.short}`;
@@ -108,6 +122,7 @@ function asset(ctx, { asset: a, more, related, saved, shareUrl, justUploaded, ma
             <button class="btn btn-primary btn-lg btn-block" type="submit">${icon('unlock')}<span>Unlock</span></button>
           </form>`}
           ${linkStatus(a)}
+          ${a.file_kind === 'software' ? softwareCheck(a) : ''}
           <div class="dl-actions">
             ${user ? html`<form method="post" action="${a.url}/save" data-save-form data-api="/api/assets/${a.slug}/save">${csrfField(ctx)}
               <button type="submit" class="btn btn-secondary btn-block ${saved ? 'is-on' : ''}" aria-pressed="${saved ? 'true' : 'false'}" data-save-btn>${icon('bookmark')}<span>${saved ? 'Saved' : 'Save'}</span></button></form>`
@@ -389,7 +404,7 @@ function upload(ctx, { values, errors, limits }) {
         <section class="panel">
           <h2 class="panel-h">${icon('file')}File</h2>
           ${dropzone(limits, errors, { required: true })}
-          <p class="hint">Programs, installers, scripts and plugins (.exe, .dmg, .aex, .jsx) aren't accepted. <a href="/guidelines#formats" target="_blank">See formats</a>.</p>
+          <p class="hint">Software (.exe, .msi, .dmg, .pkg, .zxp, .aex, .jsx and more) needs an account and goes in Software &amp; Plugins. <a href="/guidelines#formats" target="_blank">See formats</a>.</p>
         </section>
         <section class="panel">
           <h2 class="panel-h">${icon('edit')}Details</h2>

@@ -13,6 +13,7 @@ const CATEGORIES = [
   { id: 'music', name: 'Music', icon: 'music', hue: 290, blurb: 'Royalty-free beds, loops and stingers.' },
   { id: 'textures', name: 'Textures & Stills', icon: 'image', hue: 100, blurb: 'Backgrounds, paper, film scans, mattes and HDRIs.' },
   { id: '3d', name: '3D Assets', icon: 'cube', hue: 175, blurb: 'Models, scenes and materials for Blender, C4D and more.' },
+  { id: 'software', name: 'Software & Plugins', icon: 'code', hue: 200, blurb: 'Editing tools, plugins, scripts and extensions for Windows, Mac and Linux.' },
   { id: 'other', name: 'Other', icon: 'box', hue: 240, blurb: 'Guides, toolkits, fonts and everything else.' },
 ];
 
@@ -109,6 +110,10 @@ const FILE_TYPES = {
   // archives & docs
   zip: { kind: 'archive' }, '7z': { kind: 'archive' }, rar: { kind: 'archive' },
   pdf: { kind: 'document' }, txt: { kind: 'document' }, srt: { kind: 'document' },
+  // software: installers, apps, plugins and scripts. Always served as an opaque download, never inline.
+  exe: { kind: 'software' }, msi: { kind: 'software' }, dmg: { kind: 'software' }, pkg: { kind: 'software' },
+  appimage: { kind: 'software' }, deb: { kind: 'software' }, rpm: { kind: 'software' }, apk: { kind: 'software' },
+  zxp: { kind: 'software' }, aex: { kind: 'software' }, ofx: { kind: 'software' }, jsx: { kind: 'software' }, jsxbin: { kind: 'software' },
 };
 
 const KINDS = {
@@ -122,6 +127,7 @@ const KINDS = {
   font: { name: 'Font', icon: 'type' },
   archive: { name: 'Archive', icon: 'box' },
   document: { name: 'Document', icon: 'file' },
+  software: { name: 'Software', icon: 'code' },
 };
 
 // Separate preview / thumbnail uploads are limited to formats every browser can show.
@@ -131,7 +137,7 @@ const THUMB_EXTS = ['png', 'jpg', 'jpeg', 'webp', 'gif'];
 // Suggested category when a file is picked (used client side).
 const KIND_CATEGORY = {
   video: 'footage', audio: 'sfx', image: 'textures', lut: 'luts', project: 'templates',
-  preset: 'presets', model: '3d', font: 'other', archive: 'other', document: 'other',
+  preset: 'presets', model: '3d', font: 'other', archive: 'other', document: 'other', software: 'software',
 };
 
 const byId = (list) => Object.fromEntries(list.map((x) => [x.id, x]));

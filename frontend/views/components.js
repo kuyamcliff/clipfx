@@ -90,7 +90,7 @@ const mark = () => raw('<img class="mark" src="/static/brand/logo.png" alt="" wi
 const hue = (category) => raw(`style="--h:${Number(category && category.hue) || 220}"`);
 
 // Background photo for each category (CC0, see the About page). Unknown ids fall back to "other".
-const CATEGORY_PHOTOS = new Set(['footage', 'transitions', 'overlays', 'luts', 'templates', 'motion', 'presets', 'sfx', 'music', 'textures', '3d', 'other']);
+const CATEGORY_PHOTOS = new Set(['footage', 'transitions', 'overlays', 'luts', 'templates', 'motion', 'presets', 'sfx', 'music', 'textures', '3d', 'software', 'other']);
 const categoryPhoto = (category) => `/static/img/cat-${CATEGORY_PHOTOS.has(category && category.id) ? category.id : 'other'}.webp`;
 
 // A person's photo, or their initials on a color picked from their name.

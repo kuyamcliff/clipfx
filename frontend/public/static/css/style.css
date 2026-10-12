@@ -1073,3 +1073,14 @@ a, button, summary, label, input, select, textarea { touch-action: manipulation;
   .palette-x { height: 36px; padding: 0 12px; }
   .crumbs a { display: inline-flex; align-items: center; min-height: 40px; }
 }
+
+/* ---- Software safety panel on asset pages ------------------------------------------------- */
+
+.swcheck { margin-top: 14px; padding: 14px; border: 1px solid color-mix(in srgb, var(--warn) 40%, transparent); border-radius: var(--r); background: color-mix(in srgb, var(--warn) 7%, transparent); font-size: 13.5px; color: var(--text-2); }
+.swcheck p { margin: 0 0 8px; }
+.swcheck-head { display: flex; align-items: center; gap: 8px; color: var(--text); }
+.swcheck-head .i { width: 17px; height: 17px; color: var(--warn); }
+.swcheck a:not(.btn) { color: var(--link); }
+.swcheck-label { margin-top: 10px !important; color: var(--text-3); font-family: var(--mono); font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.04em; }
+.swcheck-hash { display: block; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--surface-2); color: var(--text); font-family: var(--mono); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+.swcheck-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin-top: 10px; }

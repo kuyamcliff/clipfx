@@ -25,7 +25,7 @@ const PAGES = {
       <h2>Helping out</h2>
       <p>Upload something useful, <a href="/guidelines">report</a> anything that breaks the rules, send a pull request, or get in touch at ${contact(c)}.</p>
       <h2>Photos</h2>
-      <p>The background photos on this site are public domain (CC0) from <a href="https://stocksnap.io" rel="noopener">StockSnap</a> and <a href="https://www.rawpixel.com/category/53/public-domain" rel="noopener">rawpixel</a>, by Olu Eletu, Thong Vo, Jesse Collins, Ian Livesey, Suvan Chowdhury, Nathan Engel, Michael Mongin and others. Thank you.</p>`,
+      <p>The background photos on this site are public domain (CC0) from <a href="https://stocksnap.io" rel="noopener">StockSnap</a>, <a href="https://www.rawpixel.com/category/53/public-domain" rel="noopener">rawpixel</a> and the <a href="https://wordpress.org/photos/" rel="noopener">WordPress Photo Directory</a>, by Olu Eletu, Thong Vo, Jesse Collins, Ian Livesey, Suvan Chowdhury, Nathan Engel, Michael Mongin and others. Thank you.</p>`,
   },
 
   guidelines: {
@@ -42,7 +42,8 @@ const PAGES = {
       </ul>
       <h2>Keep it safe</h2>
       <ul>
-        <li>No programs, installers, scripts or plugins (.exe, .dmg, .pkg, .aex, .jsx), including inside ZIPs. No cracked software.</li>
+        <li>Software, plugins and scripts (.exe, .msi, .dmg, .pkg, .zxp, .aex, .jsx) are welcome from accounts, in Software &amp; Plugins. Only share programs you made or are allowed to redistribute.</li>
+        <li>No malware, adware, cracked or pirated software, keygens or license bypasses. Uploading any of these gets the account banned.</li>
         <li>The download has to be the actual asset. No link-outs, "unlock" steps or malware.</li>
         <li>No sexual content, gore, hate symbols, harassment or other people's personal information.</li>
         <li>Footage of identifiable people needs their consent.</li>
