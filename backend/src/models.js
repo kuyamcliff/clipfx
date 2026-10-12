@@ -54,7 +54,7 @@ function isExpired(row, now = Date.now()) {
   return null;
 }
 
-// The public shape of an asset. Storage keys and hashes stay on the server.
+// The public shape of an asset. Storage keys stay on the server; hashes too, except for software.
 async function serialize(row, storage) {
   if (!row) return null;
   return {
@@ -77,6 +77,8 @@ async function serialize(row, storage) {
     file_size: row.file_size,
     file_ext: row.file_ext,
     file_kind: row.file_kind,
+    // Published for software so people can check the file before running it (e.g. on VirusTotal).
+    sha256: row.file_kind === 'software' && row.file_sha256 ? row.file_sha256 : null,
     width: row.width,
     height: row.height,
     duration: row.duration,

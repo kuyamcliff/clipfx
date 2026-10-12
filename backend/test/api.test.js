@@ -127,9 +127,15 @@ test('storage refuses uploads that differ from what was approved', async () => {
 });
 
 test('rejects bad types, sizes, fields and fake thumbnails', async () => {
-  let res = await alice.post('/api/uploads', { files: [{ field: 'file', name: 'virus.exe', size: 2 }] });
+  let res = await alice.post('/api/uploads', { files: [{ field: 'file', name: 'screensaver.scr', size: 2 }] });
   assert.equal(res.status, 400);
-  assert.match(res.json_.errors.file, /\.exe files aren’t accepted/);
+  assert.match(res.json_.errors.file, /\.scr files aren’t accepted/);
+  // Software is accepted from accounts, but not anonymously.
+  res = await alice.post('/api/uploads', { files: [{ field: 'file', name: 'Tool Setup.exe', size: 2 }] });
+  assert.equal(res.status, 201);
+  res = await client(srv.base).post('/api/uploads', { files: [{ field: 'file', name: 'tool.exe', size: 2 }] });
+  assert.equal(res.status, 400);
+  assert.match(res.json_.errors.file, /Log in to upload software/);
   res = await alice.post('/api/uploads', { files: [{ field: 'file', name: 'huge.mp4', size: srv.config.maxUpload + 1 }] });
   assert.match(res.json_.errors.file, /too large/);
   const quota = srv.config.userQuota;
