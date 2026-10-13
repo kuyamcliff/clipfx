@@ -1145,3 +1145,17 @@ a, button, summary, label, input, select, textarea { touch-action: manipulation;
 .docs pre.code { overflow-x: auto; white-space: pre; overflow-wrap: normal; }
 .docs-layout > * { min-width: 0; }
 .docs .endpoint code { overflow-wrap: anywhere; }
+
+/* ---- Connect an app (OAuth consent) --------------------------------------------------------- */
+
+.consent { max-width: 520px; }
+.consent h1 { font-size: clamp(1.35rem, 1vw + 1.1rem, 1.7rem); font-stretch: 85%; line-height: 1.2; }
+.consent h1 strong { color: var(--link); }
+.consent-head { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; }
+.consent-mark .mark { height: 34px; }
+.consent-link .i { width: 18px; height: 18px; color: var(--text-3); }
+.consent-app { display: grid; place-items: center; width: 40px; height: 40px; border-radius: var(--r); background: var(--surface-2); border: 1px solid var(--border); }
+.consent-app .i { width: 20px; height: 20px; color: var(--link); }
+.consent .notice { margin: 14px 0 18px; }
+.consent .scopes { margin-bottom: 16px; }
+.consent-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 18px; }

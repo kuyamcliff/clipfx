@@ -7,6 +7,7 @@ const express = require('express');
 const views = require('../views');
 const { createBackend } = require('./backend');
 const { createMcp } = require('./mcp');
+const { createOAuth } = require('./oauth');
 const { buildCatalog, decorate, decorateAll, withCounts } = require('./decorate');
 
 const STATIC_PAGES = ['about', 'guidelines', 'licenses', 'terms', 'privacy', 'copyright', 'donate', 'developers'];
@@ -82,6 +83,8 @@ function createFrontend(config, { log = console } = {}) {
   app.get('/healthz', (req, res) => res.json({ ok: true }));
 
   // MCP server for AI agents. Mounted before cookies: it only ever uses the API key it's sent.
+  const oauth = createOAuth({ backend, config });
+  app.use(oauth.open);
   const mcp = createMcp({ backend, config, log });
   app.use('/mcp', mcp.router);
 
@@ -144,7 +147,7 @@ function createFrontend(config, { log = console } = {}) {
       res.setHeader('Content-Security-Policy', [
         "default-src 'self'", `img-src 'self' data: blob:${storage}`, `media-src 'self' blob:${storage}`, "script-src 'self'",
         "style-src 'self' 'unsafe-inline'", `connect-src 'self'${storage}`, "object-src 'none'", "base-uri 'self'",
-        "form-action 'self'", "frame-ancestors 'none'",
+        `form-action 'self'${res.locals.formActionExtra ? ` ${res.locals.formActionExtra}` : ''}`, "frame-ancestors 'none'",
       ].join('; '));
       res.setHeader('X-Content-Type-Options', 'nosniff');
       res.setHeader('X-Frame-Options', 'DENY');
@@ -493,6 +496,61 @@ function createFrontend(config, { log = console } = {}) {
   app.get('/developers/api', async (req, res) => res.view(views.apiDocs));
   app.get('/developers/mcp', async (req, res) => res.view(views.mcpDocs));
 
+  // ---- "Sign in with ClipFX" consent page (OAuth for MCP clients) ------------------------
+  // The app and its redirect address are checked before we ever redirect anywhere.
+
+  const authParams = (src) => ({
+    client_id: String(src.client_id || ''), redirect_uri: String(src.redirect_uri || ''), state: src.state === undefined ? '' : String(src.state),
+    code_challenge: String(src.code_challenge || ''), code_challenge_method: String(src.code_challenge_method || ''),
+    scope: String(src.scope || ''), response_type: String(src.response_type || 'code'),
+  });
+  const backTo = (p, extra) => {
+    const u = new URL(p.redirect_uri);
+    for (const [k, v] of Object.entries(extra)) u.searchParams.set(k, v);
+    if (p.state) u.searchParams.set('state', p.state);
+    return u.toString();
+  };
+  async function loadAuthRequest(req, res, p) {
+    const r = await req.api('GET', `/api/oauth/clients/${encodeURIComponent(p.client_id)}`);
+    if (r.status !== 200) { res.fail(400, 'Unknown app', 'This app isn’t registered with ClipFX. Try connecting again from the app.'); return null; }
+    const client = r.data.client;
+    if (!client.redirect_uris.includes(p.redirect_uri)) { res.fail(400, 'Invalid redirect', 'The app sent a return address it didn’t register. For your safety, nothing was shared.'); return null; }
+    return client;
+  }
+  const renderConsent = async (req, res, p, client, { errors = {}, status = 200 } = {}) => {
+    const keys = await req.api('GET', '/api/me/keys');
+    if (keys.status !== 200) return res.apiError(keys);
+    res.setHeader('Cache-Control', 'no-store');
+    // Browsers apply form-action to the redirect after Allow/Cancel, so allow exactly the app's return address.
+    const back = new URL(p.redirect_uri);
+    res.locals.formActionExtra = back.protocol === 'http:' || back.protocol === 'https:' ? back.origin : back.protocol;
+    return res.view(views.consent, { params: p, client, scopes: keys.data.scopes, errors }, status);
+  };
+  app.get('/oauth/authorize', async (req, res) => {
+    const p = authParams(req.query);
+    const client = await loadAuthRequest(req, res, p);
+    if (!client) return undefined;
+    if (p.response_type !== 'code') return res.redirect(backTo(p, { error: 'unsupported_response_type' }));
+    if (p.code_challenge_method !== 'S256' || !p.code_challenge) return res.redirect(backTo(p, { error: 'invalid_request', error_description: 'PKCE with S256 is required.' }));
+    const ctx = await req.context();
+    if (!ctx.user) return res.redirect(`/login?next=${encodeURIComponent(req.originalUrl)}`);
+    return renderConsent(req, res, p, client);
+  });
+  app.post('/oauth/authorize', requireUser, async (req, res) => {
+    const p = authParams(req.body);
+    const client = await loadAuthRequest(req, res, p);
+    if (!client) return undefined;
+    if (req.body.decision !== 'allow') return res.redirect(303, backTo(p, { error: 'access_denied', error_description: 'The user declined.' }));
+    const list = (v) => (Array.isArray(v) ? v : v ? [v] : []);
+    const r = await req.api('POST', '/api/oauth/authorize', {
+      client_id: p.client_id, redirect_uri: p.redirect_uri, code_challenge: p.code_challenge, code_challenge_method: p.code_challenge_method,
+      scopes: req.body.full === 'on' ? 'all' : list(req.body.scopes), expires: req.body.expires === 'never' ? 'never' : Number(req.body.expires),
+    });
+    if (r.status === 200) return res.redirect(303, backTo(p, { code: r.data.code, iss: siteOrigin(req) }));
+    if (r.status === 400) return renderConsent(req, res, { ...p, chosen: list(req.body.scopes), full: req.body.full, expires: req.body.expires }, client, { errors: r.data.errors || { scopes: r.data.error }, status: 400 });
+    return res.apiError(r);
+  });
+
   // ---- API keys -------------------------------------------------------------------------
   // A new key is rendered straight into the response (never put in a cookie or a redirect),
   // so it only ever exists on the screen of the person who made it.
@@ -560,7 +618,7 @@ function createFrontend(config, { log = console } = {}) {
     res.type('text/plain').send([
       'User-agent: *', ...AI_AGENTS.map((a) => `User-agent: ${a}`),
       'Allow: /', 'Allow: /api/assets', 'Allow: /api/users', 'Allow: /api/creators',
-      'Disallow: /admin', 'Disallow: /dashboard', 'Disallow: /settings', 'Disallow: /saved', 'Disallow: /auth/',
+      'Disallow: /admin', 'Disallow: /dashboard', 'Disallow: /settings', 'Disallow: /saved', 'Disallow: /auth/', 'Disallow: /oauth/',
       'Disallow: /api/', 'Disallow: /*/download', 'Disallow: /*/report', 'Disallow: /*/edit',
       '', `Sitemap: ${origin}/sitemap.xml`, '',
     ].join('\n'));
@@ -587,7 +645,7 @@ ${m.catalog.categories.map((c) => `- [${c.name}](${origin}/browse?category=${c.i
 - ${origin}/api/assets/{slug} : one asset with its license, file details and creator
 - ${origin}/api/users/{username} : a creator's profile and uploads
 - ${origin}/api/creators : most downloaded creators
-- ${origin}/mcp : MCP server (Streamable HTTP) for AI agents: search, file details and download links with no key; uploads, edits and saved files with an API key. Setup: ${origin}/developers/mcp
+- ${origin}/mcp : MCP server (Streamable HTTP) for AI agents. Sign-in required: OAuth ("Sign in with ClipFX", discovered via the 401 response) or an API key. Search, download, upload, edit and saved files. Setup: ${origin}/developers/mcp
 - ${origin}/developers/api : API keys for acting on a user's own account (upload, edit, delete, saved files, profile), with scoped permissions
 - ${origin}/api/meta : categories, software, licenses and accepted file types
 - Asset pages live at ${origin}/a/{slug}; downloads at ${origin}/a/{slug}/download

@@ -153,6 +153,26 @@ CREATE TABLE IF NOT EXISTS api_keys (
 );
 CREATE INDEX IF NOT EXISTS api_keys_user ON api_keys(user_id);
 
+-- Apps that connect through "Sign in with ClipFX" (OAuth, used by MCP clients). Self-registered.
+CREATE TABLE IF NOT EXISTS oauth_clients (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  redirect_uris TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+);
+
+-- One-time authorization codes (PKCE), exchanged for an API key within minutes.
+CREATE TABLE IF NOT EXISTS oauth_codes (
+  code_hash TEXT PRIMARY KEY,
+  client_id TEXT NOT NULL REFERENCES oauth_clients(id) ON DELETE CASCADE,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  redirect_uri TEXT NOT NULL,
+  challenge TEXT NOT NULL,
+  scopes TEXT NOT NULL,
+  key_days INTEGER,
+  expires_at INTEGER NOT NULL
+);
+
 -- Files removed for copyright / abuse can't simply be uploaded again.
 CREATE TABLE IF NOT EXISTS blocked_hashes (
   sha256 TEXT PRIMARY KEY,

@@ -8,7 +8,7 @@ const { Pool, types } = require('pg');
 types.setTypeParser(20, (v) => Number(v));
 types.setTypeParser(1700, (v) => Number(v));
 
-const TABLES = ['users', 'sessions', 'reset_tokens', 'assets', 'daily_downloads', 'favorites', 'reports', 'uploads', 'blocked_hashes', 'oauth_accounts', 'api_keys'];
+const TABLES = ['users', 'sessions', 'reset_tokens', 'assets', 'daily_downloads', 'favorites', 'reports', 'uploads', 'blocked_hashes', 'oauth_accounts', 'api_keys', 'oauth_clients', 'oauth_codes'];
 
 const schemaSql = (SCHEMA_NAME) => `
 CREATE SCHEMA IF NOT EXISTS ${SCHEMA_NAME};
@@ -147,6 +147,26 @@ CREATE TABLE IF NOT EXISTS api_keys (
   created_at BIGINT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS api_keys_user ON api_keys(user_id);
+
+-- Apps that connect through "Sign in with ClipFX" (OAuth, used by MCP clients). Self-registered.
+CREATE TABLE IF NOT EXISTS oauth_clients (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  redirect_uris TEXT NOT NULL,
+  created_at BIGINT NOT NULL
+);
+
+-- One-time authorization codes (PKCE), exchanged for an API key within minutes.
+CREATE TABLE IF NOT EXISTS oauth_codes (
+  code_hash TEXT PRIMARY KEY,
+  client_id TEXT NOT NULL REFERENCES oauth_clients(id) ON DELETE CASCADE,
+  user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  redirect_uri TEXT NOT NULL,
+  challenge TEXT NOT NULL,
+  scopes TEXT NOT NULL,
+  key_days INTEGER,
+  expires_at BIGINT NOT NULL
+);
 
 CREATE TABLE IF NOT EXISTS blocked_hashes (
   sha256 TEXT PRIMARY KEY,

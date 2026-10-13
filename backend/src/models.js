@@ -200,6 +200,7 @@ function createModels(db, { storage }) {
     async purgeExpired() {
       await run('DELETE FROM sessions WHERE expires_at < ?', Date.now());
       await run('DELETE FROM reset_tokens WHERE expires_at < ?', Date.now());
+      await run('DELETE FROM oauth_codes WHERE expires_at < ?', Date.now());
     },
   };
 
@@ -224,11 +225,11 @@ function createModels(db, { storage }) {
 
   // Personal API keys: "cfx_" + 40 random characters. Stored as a SHA-256 hash, like sessions.
   const apiKeys = {
-    async create(userId, { name, scopes, expiresAt }) {
+    async create(userId, { name, scopes, expiresAt, clientId = null }) {
       const token = `cfx_${crypto.randomBytes(30).toString('base64url')}`;
       const id = crypto.randomBytes(9).toString('base64url');
-      await run(`INSERT INTO api_keys (id, user_id, name, prefix, token_hash, scopes, expires_at, last_used_at, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?)`, id, userId, name, token.slice(0, 12), sha(token), scopes.join(' '), expiresAt || null, Date.now());
+      await run(`INSERT INTO api_keys (id, user_id, name, prefix, token_hash, scopes, expires_at, last_used_at, created_at, client_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)`, id, userId, name, token.slice(0, 12), sha(token), scopes.join(' '), expiresAt || null, Date.now(), clientId);
       return { id, token };
     },
     // The key's row and its owner, if the key exists and hasn't expired.
@@ -241,11 +242,40 @@ function createModels(db, { storage }) {
       const { key_id: id, key_scopes: scopes, key_last_used: lastUsed, ...user } = row;
       return { key: { id, scopes: scopes.split(' ').filter(Boolean), lastUsed }, user };
     },
-    list: (userId) => many(`SELECT id, name, prefix, scopes, expires_at, last_used_at, created_at FROM api_keys
+    list: (userId) => many(`SELECT id, name, prefix, scopes, expires_at, last_used_at, created_at, client_id FROM api_keys
       WHERE user_id = ? ORDER BY created_at DESC`, userId),
     count: (userId) => num('SELECT COUNT(*) AS n FROM api_keys WHERE user_id = ?', userId),
     revoke: (id, userId) => run('DELETE FROM api_keys WHERE id = ? AND user_id = ?', String(id), userId),
     touch: (id) => run('UPDATE api_keys SET last_used_at = ? WHERE id = ?', Date.now(), id),
+    // Re-connecting an app replaces the key it had before.
+    revokeForClient: (userId, clientId) => run('DELETE FROM api_keys WHERE user_id = ? AND client_id = ?', userId, clientId),
+  };
+
+  const oauthApps = {
+    async register({ name, redirectUris }) {
+      const id = `app_${crypto.randomBytes(12).toString('base64url')}`;
+      await run('INSERT INTO oauth_clients (id, name, redirect_uris, created_at) VALUES (?, ?, ?, ?)', id, name, JSON.stringify(redirectUris), Date.now());
+      return id;
+    },
+    async get(id) {
+      const row = await one('SELECT * FROM oauth_clients WHERE id = ?', String(id || ''));
+      return row && { id: row.id, name: row.name, redirectUris: JSON.parse(row.redirect_uris), createdAt: Number(row.created_at) };
+    },
+    async createCode(v) {
+      const code = crypto.randomBytes(32).toString('base64url');
+      await run(`INSERT INTO oauth_codes (code_hash, client_id, user_id, redirect_uri, challenge, scopes, key_days, expires_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, sha(code), v.clientId, v.userId, v.redirectUri, v.challenge, v.scopes.join(' '), v.keyDays, Date.now() + 10 * 60 * 1000);
+      return code;
+    },
+    // Single use: the code is deleted as it's read, whether or not the rest checks out.
+    async takeCode(code) {
+      const h = sha(String(code || ''));
+      const row = await one('SELECT * FROM oauth_codes WHERE code_hash = ?', h);
+      if (!row) return null;
+      await run('DELETE FROM oauth_codes WHERE code_hash = ?', h);
+      return Number(row.expires_at) > Date.now() ? row : null;
+    },
+    purgeCodes: () => run('DELETE FROM oauth_codes WHERE expires_at < ?', Date.now()),
   };
 
   const uploads = {
@@ -407,7 +437,7 @@ function createModels(db, { storage }) {
     resolveAllFor: (assetId, status, by) => run("UPDATE reports SET status = ?, resolved_at = ?, resolved_by = ? WHERE asset_id = ? AND status = 'open'", status, Date.now(), by, assetId),
   };
 
-  return { db, users, sessions, resets, oauth, apiKeys, uploads, assets, favorites, reports };
+  return { db, users, sessions, resets, oauth, apiKeys, oauthApps, uploads, assets, favorites, reports };
 }
 
 module.exports = { createModels, serialize, buildSearch, randomSlug, isExpired, MEDIA_MIME, extOfKey, PUBLIC_ASSET_SQL };

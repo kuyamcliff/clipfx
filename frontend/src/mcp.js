@@ -2,7 +2,8 @@
 // MCP server for AI agents at /mcp (Streamable HTTP, stateless, JSON responses).
 // Every tool is a thin wrapper over the public API, called with the agent's own API key, so
 // permissions, validation and rate limits are exactly the ones the API already enforces.
-// Without a key, only the public tools work. Cookies are never used here.
+// Sign-in is required for every request: an OAuth token from "Sign in with ClipFX" (see oauth.js)
+// or an API key, both sent as a Bearer token. Cookies are never used here.
 
 const express = require('express');
 
@@ -42,7 +43,7 @@ const FILE_FIELDS = {
 };
 
 const TOOLS = [
-  // Public: no key needed.
+  // Library: any signed-in account.
   {
     name: 'search_files', title: 'Search files', scope: null, annotations: READ,
     description: 'Search the ClipFX library of free video editing resources: stock footage, transitions, LUTs, overlays, templates, presets, sound effects, music, textures, 3D assets and software. Returns 24 results per page.',
@@ -204,8 +205,8 @@ function createMcp({ backend, config, log = console }) {
     if (r.status >= 200 && r.status < 400) return r;
     const d = r.data || {};
     const keysUrl = `${ctx.origin}/settings/api-keys`;
-    if (r.status === 401) throw new ToolError(ctx.token ? 'The API key is invalid, expired or revoked. Create a new one at ' + keysUrl : `This needs a ClipFX API key. Create one at ${keysUrl} and send it as "Authorization: Bearer cfx_..."`);
-    if (r.status === 403 && d.missing_scope) throw new ToolError(`This API key doesn't have the "${d.missing_scope}" permission. Add it by creating a new key at ${keysUrl}.`);
+    if (r.status === 401) throw new ToolError(`The connection to ClipFX expired or was revoked. Reconnect the ClipFX server in your app to sign in again (or create a new key at ${keysUrl}).`);
+    if (r.status === 403 && d.missing_scope) throw new ToolError(`This connection doesn't have the "${d.missing_scope}" permission. Reconnect ClipFX and tick it on the sign-in screen (or create a key with it at ${keysUrl}).`);
     const fields = d.errors ? ` ${Object.entries(d.errors).map(([k, v]) => `${k}: ${v}`).join('; ')}` : '';
     throw new ToolError(`${d.error || `Request failed (${r.status}).`}${fields && !fields.includes(d.error) ? fields : ''}`);
   }
@@ -266,7 +267,7 @@ function createMcp({ backend, config, log = console }) {
     },
     async whoami(a, ctx) {
       const { user } = (await call(ctx, 'GET', '/api/session')).data;
-      if (!user) throw new ToolError(ctx.token ? 'This API key doesn\'t have the "profile:read" permission.' : `No API key sent. Create one at ${ctx.origin}/settings/api-keys.`);
+      if (!user) throw new ToolError('This connection doesn\'t have the "profile:read" permission. Reconnect ClipFX and tick "Read your profile".');
       return { username: user.username, display_name: user.display_name, email: user.email || null, bio: user.bio, website: user.website, socials: user.socials, role: user.role, profile_url: `${ctx.origin}/u/${user.username}` };
     },
     async list_my_files(a, ctx) {
@@ -350,7 +351,6 @@ function createMcp({ backend, config, log = console }) {
       return { message: d.message || 'Profile saved.', profile_url: `${ctx.origin}/u/${user.username}` };
     },
     async unlock_file(a, ctx) {
-      if (!ctx.token) throw new ToolError(`unlock_file needs an API key (any permissions). Create one at ${ctx.origin}/settings/api-keys.`);
       const d = (await call(ctx, 'POST', `${slugPath(a.slug)}/unlock`, { password: a.password })).data;
       if (!d.unlock_token) return { unlocked: true, note: d.message };
       return { unlocked: true, unlock_token: d.unlock_token, next: 'Pass unlock_token to get_download_link.' };
@@ -371,9 +371,6 @@ function createMcp({ backend, config, log = console }) {
     const args = (params.arguments && typeof params.arguments === 'object') ? params.arguments : {};
     for (const k of tool.inputSchema.required) {
       if (args[k] === undefined || args[k] === null || args[k] === '') return { result: textResult(`Missing required argument: ${k}`, true) };
-    }
-    if (tool.scope && !ctx.token) {
-      return { result: textResult(`${tool.name} needs a ClipFX API key${tool.scope === 'any' ? '' : ` with the "${tool.scope}" permission`}. Create one at ${ctx.origin}/settings/api-keys and send it in the "Authorization: Bearer cfx_..." header of your MCP connection.`, true) };
     }
     try {
       const data = await HANDLERS[tool.name](args, ctx);
@@ -399,7 +396,7 @@ function createMcp({ backend, config, log = console }) {
           protocolVersion: PROTOCOL_VERSIONS.includes(asked) ? asked : PROTOCOL_VERSIONS[0],
           capabilities: { tools: { listChanged: false } },
           serverInfo: { name: 'clipfx', title: 'ClipFX', version: SERVER_VERSION, websiteUrl: ctx.origin },
-          instructions: `ClipFX (${ctx.origin}) is a free, nonprofit library of video editing resources. Use search_files and get_file to find assets and get_download_link to fetch them; always respect each file's license. ${ctx.token ? 'An API key is connected, so you can also manage the user\'s own files (upload_small_file or start_upload, then publish_file), saved files and profile, within the key\'s permissions.' : `No API key is connected, so only public tools work. The user can create one at ${ctx.origin}/settings/api-keys.`} Confirm with the user before publishing, deleting or reporting.`,
+          instructions: `ClipFX (${ctx.origin}) is a free, nonprofit library of video editing resources, and you are signed in to the user's ClipFX account. Use search_files and get_file to find assets and get_download_link to fetch them; always respect each file's license. You can also manage the user's own files (upload_small_file or start_upload, then publish_file), saved files and profile, within the permissions they approved. Confirm with the user before publishing, deleting or reporting.`,
         });
       }
       case 'ping': return reply({});
@@ -436,8 +433,28 @@ function createMcp({ backend, config, log = console }) {
     return res.status(405).json({ error: 'This MCP server answers POST requests (Streamable HTTP, JSON responses). Setup guide: /developers/mcp' });
   });
   router.delete('/', (req, res) => res.status(405).setHeader('Allow', 'POST, OPTIONS').end());
+  // Sign-in required. A 401 carries the protected-resource metadata URL (RFC 9728), which is how MCP
+  // clients discover "Sign in with ClipFX" and start the OAuth flow on their own.
+  // Checked on every request (no caching), so disconnecting an app or revoking a key ends access at once.
+  async function checkToken(req, token) {
+    if (!token || !/^cfx_[\w-]{20,80}$/.test(token)) return false;
+    const r = await backend.callAs(req, 'GET', '/api/session', undefined, token);
+    if (r.status === 200) return true;
+    return r.status >= 500 ? null : false;
+  }
+  const challenge = (req, res, error) => {
+    const meta = `${origin(req)}/.well-known/oauth-protected-resource/mcp`;
+    res.setHeader('WWW-Authenticate', `Bearer resource_metadata="${meta}"${error ? `, error="${error}", error_description="Sign in to ClipFX again."` : ''}`);
+    return res.status(401).json({ jsonrpc: '2.0', id: null, error: { code: -32001, message: `Sign in required. Connect this server from an MCP client to sign in with ClipFX, or send an API key from ${origin(req)}/settings/api-keys.` } });
+  };
+
   router.post('/', express.json({ limit: '4.5mb', type: () => true }), async (req, res) => {
-    const ctx = { req, token: tokenFrom(req), origin: origin(req) };
+    const token = tokenFrom(req);
+    if (!token) return challenge(req, res);
+    const ok = await checkToken(req, token);
+    if (ok === null) return res.status(503).json({ jsonrpc: '2.0', id: null, error: { code: -32603, message: 'ClipFX is unavailable right now. Try again in a minute.' } });
+    if (!ok) return challenge(req, res, 'invalid_token');
+    const ctx = { req, token, origin: origin(req) };
     const body = req.body;
     const batch = Array.isArray(body);
     const msgs = batch ? body : [body];

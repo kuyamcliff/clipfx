@@ -290,18 +290,66 @@ function apiKeys(ctx, { keys, scopes, max, created = null, values = {}, errors =
         <h2 class="panel-h">${icon('key')}Your keys <span class="dim mono">${keys.length}/${max}</span></h2>
         ${keys.length ? html`<ul class="keylist">${keys.map((k) => html`<li class="keyitem${k.expired ? ' is-expired' : ''}">
           <div class="keyitem-main">
-            <p class="keyitem-name"><strong>${k.name}</strong> <code>${k.prefix}…</code></p>
+            <p class="keyitem-name"><strong>${k.name}</strong> ${k.app ? html`<span class="keytag keytag-full">Connected app</span> ` : ''}<code>${k.prefix}…</code></p>
             <p class="keyitem-meta">${keyExpiry(k)}<span>Created ${formatDate(k.created_at)}</span><span>${k.last_used_at ? `Last used ${timeAgo(k.last_used_at)}` : 'Never used'}</span></p>
             <p class="keyitem-scopes">${k.scopes.includes('*') || all.every((id) => k.scopes.includes(id)) ? html`<span class="keytag keytag-full">Full access</span>`
     : k.scopes.map((id) => html`<span class="keytag" title="${id}">${scopeName[id] || id}</span>`)}</p>
           </div>
-          <form method="post" action="/settings/api-keys/${k.id}/revoke" data-confirm="Revoke “${k.name}”? Anything using it stops working right away.">
+          <form method="post" action="/settings/api-keys/${k.id}/revoke" data-confirm="${k.app ? `Disconnect “${k.name}”? It loses access right away.` : `Revoke “${k.name}”? Anything using it stops working right away.`}">
             ${csrfField(ctx)}<button class="btn btn-danger btn-sm" type="submit">${icon('trash')}<span>Revoke</span></button></form>
         </li>`)}</ul>` : html`<p class="hint">No keys yet. Create one to use the API from your own scripts.</p>`}
       </section>
     </div>
   </div>`;
   return layout(ctx, { title: 'API keys', body, noindex: true });
+}
+
+// "Sign in with ClipFX": an app (usually an AI agent's MCP client) asks to use the account.
+function consent(ctx, { params: p, client, scopes, errors = {} }) {
+  const ids = scopes.map((s) => s.id);
+  const requested = p.scope.split(/\s+/).filter(Boolean);
+  let full; let chosen;
+  if (p.chosen || p.full) { full = p.full === 'on'; chosen = new Set(p.chosen || []); }
+  else if (requested.includes('*')) { full = true; chosen = new Set(ids); }
+  else if (requested.some((x) => ids.includes(x))) { full = false; chosen = new Set(requested.filter((x) => ids.includes(x))); }
+  else { full = false; chosen = new Set(scopes.filter((s) => !s.danger).map((s) => s.id)); }
+  let host;
+  try { const u = new URL(p.redirect_uri); host = u.protocol === 'http:' || u.protocol === 'https:' ? u.host : u.protocol.replace(/:$/, ' app'); } catch { host = p.redirect_uri; }
+  const hidden = ['client_id', 'redirect_uri', 'state', 'code_challenge', 'code_challenge_method', 'scope', 'response_type'];
+  const expires = p.expires || '90';
+  return layout(ctx, {
+    title: `Connect ${client.name}`, noindex: true, bodyClass: 'is-auth',
+    body: html`<div class="container auth">
+      <form method="post" action="/oauth/authorize" class="auth-card consent" data-key-form>
+        ${csrfField(ctx)}
+        ${hidden.map((k) => html`<input type="hidden" name="${k}" value="${p[k]}">`)}
+        <div class="consent-head"><span class="consent-mark">${mark()}</span><span class="consent-link" aria-hidden="true">${icon('link')}</span><span class="consent-app">${icon('zap')}</span></div>
+        <h1><strong>${client.name}</strong> wants to use your ClipFX account</h1>
+        <p class="sub">Signed in as <strong>@${ctx.user.username}</strong>. After you allow it, you'll go back to <code>${host}</code>.</p>
+        ${notice('', html`The app's name is self-declared. Only continue if you just tried to connect an app or AI agent to ClipFX.`, 'shield')}
+        <fieldset class="field scopes">
+          <legend>It will be able to</legend>
+          <label class="scope scope-all"><input type="checkbox" name="full" ${full ? 'checked' : ''} data-key-full>
+            <span><strong>Full access</strong><small>Everything below, including permissions added later.</small></span></label>
+          ${scopes.map((s) => html`<label class="scope${s.danger ? ' scope-danger' : ''}"><input type="checkbox" name="scopes" value="${s.id}" ${full || chosen.has(s.id) ? 'checked' : ''} data-key-scope>
+            <span><strong>${s.name}</strong><small>${s.description}</small></span></label>`)}
+          ${fieldError(errors, 'scopes')}
+        </fieldset>
+        <div class="field">
+          <label for="consent-expires">Stay connected for</label>
+          <select id="consent-expires" name="expires">
+            ${[['30', '30 days'], ['90', '90 days'], ['365', '1 year'], ['never', 'Until I disconnect it']].map(([v, l]) => html`<option value="${v}" ${expires === v ? 'selected' : ''}>${l}</option>`)}
+          </select>
+          ${fieldError(errors, 'expires')}
+        </div>
+        <p class="hint">It shows up under <a href="/settings/api-keys">Settings → API keys</a>, where you can disconnect it any time.</p>
+        <div class="consent-actions">
+          <button class="btn btn-secondary btn-lg" type="submit" name="decision" value="deny">Cancel</button>
+          <button class="btn btn-primary btn-lg" type="submit" name="decision" value="allow" data-loading>${icon('check')}<span>Allow</span></button>
+        </div>
+      </form>
+    </div>`,
+  });
 }
 
 function error(ctx, { status, title, message }) {
@@ -318,4 +366,4 @@ function error(ctx, { status, title, message }) {
   });
 }
 
-module.exports = { signup, login, resetPassword, settings, apiKeys, error };
+module.exports = { signup, login, resetPassword, settings, apiKeys, consent, error };

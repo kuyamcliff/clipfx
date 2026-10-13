@@ -95,6 +95,7 @@ const publicKey = (row) => ({
   id: row.id, name: row.name, prefix: row.prefix, scopes: row.scopes.split(' ').filter(Boolean),
   expires_at: row.expires_at ? Number(row.expires_at) : null, last_used_at: row.last_used_at ? Number(row.last_used_at) : null,
   created_at: Number(row.created_at), expired: !!(row.expires_at && Number(row.expires_at) <= Date.now()),
+  app: !!row.client_id,
 });
 
 const scopesFor = (user) => SCOPES.filter((s) => !s.adminOnly || user.role === 'admin');
@@ -139,4 +140,4 @@ function routes(app, ctx) {
   });
 }
 
-module.exports = { SCOPES, FULL, RULES, MAX_KEYS, tokenFrom, authorize, parseExpiry, routes };
+module.exports = { SCOPES, SCOPE_IDS, scopesFor, DAY, FULL, RULES, MAX_KEYS, tokenFrom, authorize, parseExpiry, routes };

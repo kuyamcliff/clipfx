@@ -17,4 +17,8 @@ module.exports = {
   uploads: [
     ['anon_hash', 'TEXT'],
   ],
+  // Keys issued to an app through "Sign in with ClipFX".
+  api_keys: [
+    ['client_id', 'TEXT'],
+  ],
 };
