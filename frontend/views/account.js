@@ -304,6 +304,18 @@ function apiKeys(ctx, { keys, scopes, max, created = null, values = {}, errors =
   return layout(ctx, { title: 'API keys', body, noindex: true });
 }
 
+// Known apps get their logo, but only when the return address proves it: names are self-declared,
+// so "Claude" alone isn't enough. claude.ai / claude.com, or a Claude app returning to this computer.
+const KNOWN_APPS = [
+  { logo: '/static/img/apps/claude.svg', label: 'Claude', match: (name, u) => (u.protocol === 'https:' && /(^|\.)claude\.(ai|com)$/.test(u.hostname))
+    || (/^claude\b/i.test(name) && u.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(u.hostname)) },
+];
+function appLogo(client, redirectUri) {
+  let u;
+  try { u = new URL(redirectUri); } catch { return null; }
+  return KNOWN_APPS.find((a) => a.match(client.name, u)) || null;
+}
+
 // "Sign in with ClipFX": an app (usually an AI agent's MCP client) asks to use the account.
 function consent(ctx, { params: p, client, scopes, errors = {} }) {
   const ids = scopes.map((s) => s.id);
@@ -316,6 +328,7 @@ function consent(ctx, { params: p, client, scopes, errors = {} }) {
   let host;
   try { const u = new URL(p.redirect_uri); host = u.protocol === 'http:' || u.protocol === 'https:' ? u.host : u.protocol.replace(/:$/, ' app'); } catch { host = p.redirect_uri; }
   const hidden = ['client_id', 'redirect_uri', 'state', 'code_challenge', 'code_challenge_method', 'scope', 'response_type'];
+  const known = appLogo(client, p.redirect_uri);
   const expires = p.expires || '90';
   return layout(ctx, {
     title: `Connect ${client.name}`, noindex: true, bodyClass: 'is-auth',
@@ -323,7 +336,7 @@ function consent(ctx, { params: p, client, scopes, errors = {} }) {
       <form method="post" action="/oauth/authorize" class="auth-card consent" data-key-form>
         ${csrfField(ctx)}
         ${hidden.map((k) => html`<input type="hidden" name="${k}" value="${p[k]}">`)}
-        <div class="consent-head"><span class="consent-mark">${mark()}</span><span class="consent-link" aria-hidden="true">${icon('link')}</span><span class="consent-app">${icon('zap')}</span></div>
+        <div class="consent-head"><span class="consent-mark">${mark()}</span><span class="consent-link" aria-hidden="true">${icon('link')}</span><span class="consent-app">${known ? html`<img src="${known.logo}" alt="${known.label}" width="24" height="24">` : icon('zap')}</span></div>
         <h1><strong>${client.name}</strong> wants to use your ClipFX account</h1>
         <p class="sub">Signed in as <strong>@${ctx.user.username}</strong>. After you allow it, you'll go back to <code>${host}</code>.</p>
         ${notice('', html`The app's name is self-declared. Only continue if you just tried to connect an app or AI agent to ClipFX.`, 'shield')}

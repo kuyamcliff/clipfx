@@ -80,7 +80,7 @@ const TOOLS = [
   // Account: need an API key.
   {
     name: 'whoami', title: 'Who am I', scope: 'profile:read', annotations: READ,
-    description: 'The account the API key belongs to: username, display name, email, bio, website, social links and role.',
+    description: 'The signed-in ClipFX account: username, display name, email, bio, website, social links and role.',
     inputSchema: obj({}),
   },
   {
