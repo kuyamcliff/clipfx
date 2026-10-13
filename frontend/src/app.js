@@ -6,6 +6,7 @@ const crypto = require('node:crypto');
 const express = require('express');
 const views = require('../views');
 const { createBackend } = require('./backend');
+const { createMcp } = require('./mcp');
 const { buildCatalog, decorate, decorateAll, withCounts } = require('./decorate');
 
 const STATIC_PAGES = ['about', 'guidelines', 'licenses', 'terms', 'privacy', 'copyright', 'donate', 'developers'];
@@ -79,6 +80,10 @@ function createFrontend(config, { log = console } = {}) {
   app.use(express.static(path.join(__dirname, '..', 'public'), { index: false, maxAge: config.production ? '1d' : 0 }));
   app.get('/favicon.ico', (req, res) => res.redirect(301, '/static/brand/favicon.ico'));
   app.get('/healthz', (req, res) => res.json({ ok: true }));
+
+  // MCP server for AI agents. Mounted before cookies: it only ever uses the API key it's sent.
+  const mcp = createMcp({ backend, config, log });
+  app.use('/mcp', mcp.router);
 
   // Cookies & CSRF token (double-submit: the API checks the same token).
   app.use((req, res, next) => {
@@ -486,6 +491,7 @@ function createFrontend(config, { log = console } = {}) {
   }));
 
   app.get('/developers/api', async (req, res) => res.view(views.apiDocs));
+  app.get('/developers/mcp', async (req, res) => res.view(views.mcpDocs));
 
   // ---- API keys -------------------------------------------------------------------------
   // A new key is rendered straight into the response (never put in a cookie or a redirect),
@@ -581,6 +587,7 @@ ${m.catalog.categories.map((c) => `- [${c.name}](${origin}/browse?category=${c.i
 - ${origin}/api/assets/{slug} : one asset with its license, file details and creator
 - ${origin}/api/users/{username} : a creator's profile and uploads
 - ${origin}/api/creators : most downloaded creators
+- ${origin}/mcp : MCP server (Streamable HTTP) for AI agents: search, file details and download links with no key; uploads, edits and saved files with an API key. Setup: ${origin}/developers/mcp
 - ${origin}/developers/api : API keys for acting on a user's own account (upload, edit, delete, saved files, profile), with scoped permissions
 - ${origin}/api/meta : categories, software, licenses and accepted file types
 - Asset pages live at ${origin}/a/{slug}; downloads at ${origin}/a/{slug}/download
@@ -620,7 +627,7 @@ ${m.catalog.categories.map((c) => `- [${c.name}](${origin}/browse?category=${c.i
   app.get('/sitemaps/pages.xml', async (req, res) => {
     const origin = siteOrigin(req);
     const m = await getMeta(req);
-    const paths = ['/', '/browse', ...m.catalog.categories.map((c) => `/browse?category=${encodeURIComponent(c.id)}`), ...STATIC_PAGES.map((p) => `/${p}`), '/developers/api'];
+    const paths = ['/', '/browse', ...m.catalog.categories.map((c) => `/browse?category=${encodeURIComponent(c.id)}`), ...STATIC_PAGES.map((p) => `/${p}`), '/developers/api', '/developers/mcp'];
     return sendXml(res, `<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${paths.map((p) => urlEntry(origin + p)).join('')}</urlset>`);
   });
 

@@ -1,7 +1,7 @@
 'use strict';
 // /developers/api: how to use personal API keys. Scopes come from the API's own /api/meta, so the
 // docs list exactly what the server enforces.
-const { html, formatBytes } = require('../src/html');
+const { html, raw, formatBytes } = require('../src/html');
 const { layout } = require('./layout');
 const { icon, notice } = require('./components');
 
@@ -32,7 +32,8 @@ function apiDocs(ctx) {
       <h1>API keys</h1>
       <p class="lede">Use your ${ctx.config.siteName} account from scripts, apps and AI agents. A key acts as you, limited to the permissions you give it.</p>
     </div>
-    <a class="btn btn-primary btn-sm" href="${ctx.user ? '/settings/api-keys' : '/login?next=/settings/api-keys'}">${icon('key')}<span>Manage keys</span></a></header>
+    <div class="btnrow"><a class="btn btn-secondary btn-sm" href="/developers/mcp">${icon('zap')}<span>MCP for AI agents</span></a>
+    <a class="btn btn-primary btn-sm" href="${ctx.user ? '/settings/api-keys' : '/login?next=/settings/api-keys'}">${icon('key')}<span>Manage keys</span></a></div></header>
 
     <div class="docs-layout">
       <nav class="docs-toc" aria-label="On this page"><p class="docs-toc-h mono">On this page</p>
@@ -268,4 +269,119 @@ curl -L ${origin}/api/assets/SLUG/download -H "Authorization: Bearer $KEY" \\
   });
 }
 
-module.exports = { apiDocs };
+// /developers/mcp: connecting AI agents to the MCP server at /mcp. The tool table comes from the
+// server's own definitions.
+function mcpDocs(ctx) {
+  const { TOOLS } = require('../src/mcp');
+  const url = ctx.absolute('/mcp');
+  const pre = (s) => html`<pre class="code">${s}</pre>`;
+  const pub = TOOLS.filter((t) => !t.scope);
+  const acct = TOOLS.filter((t) => t.scope);
+  const row = (t) => html`<tr><td><code>${t.name}</code></td><td>${t.description}</td><td>${t.scope ? html`<code>${t.scope === 'any' ? 'any key' : t.scope}</code>` : html`<span class="dim">none</span>`}</td></tr>`;
+  const sections = [['connect', 'Connect'], ['clients', 'Client setup'], ['auth', 'API key'], ['tools', 'Tools'], ['uploads', 'Uploading from an agent'], ['protocol', 'Protocol details']];
+  const body = html`
+  <div class="container docs">
+    <nav class="crumbs" aria-label="Breadcrumb"><a href="/developers">API and AI access</a>${icon('chevronRight')}<span>MCP server</span></nav>
+    <header class="pagehead doc-head"><div>
+      <h1>MCP server</h1>
+      <p class="lede">Connect Claude, ChatGPT, Cursor, VS Code and other AI agents to ${ctx.config.siteName} with the Model Context Protocol. Search and download for free, or add an API key to let the agent manage your files.</p>
+    </div>
+    <a class="btn btn-primary btn-sm" href="${ctx.user ? '/settings/api-keys' : '/login?next=/settings/api-keys'}">${icon('key')}<span>Get an API key</span></a></header>
+
+    <div class="docs-layout">
+      <nav class="docs-toc" aria-label="On this page"><p class="docs-toc-h mono">On this page</p>
+        ${sections.map(([id, label]) => html`<a href="#${id}">${label}</a>`)}</nav>
+      <article class="prose doc">
+        <h2 id="connect">Connect</h2>
+        <p>Server URL:</p>
+        <div class="newkey-row"><code class="newkey-token" data-select-on-focus tabindex="0">${url}</code>
+          <button type="button" class="btn btn-secondary btn-sm" data-copy="${url}">${icon('copy')}<span>Copy</span></button></div>
+        <ul>
+          <li><strong>No key:</strong> search, file details, download links, creators and categories work right away.</li>
+          <li><strong>With a key:</strong> the agent can also upload and publish files, edit and delete them, manage saved files and update your profile, within the <a href="/developers/api#permissions">permissions</a> you gave the key. Send it as <code>Authorization: Bearer cfx_...</code>.</li>
+        </ul>
+
+        <h2 id="clients">Client setup</h2>
+        <h3>Claude Code</h3>
+        ${pre(`claude mcp add --transport http clipfx ${url} \\
+  --header "Authorization: Bearer cfx_your_key_here"`)}
+        <h3>Claude (claude.ai and desktop app)</h3>
+        <p>Settings → Connectors → Add custom connector, and paste <code>${url}</code>. This gives the public tools. For account tools in Claude Desktop, use <code>mcp-remote</code> so the key is sent as a header:</p>
+        ${pre(`{
+  "mcpServers": {
+    "clipfx": {
+      "command": "npx",
+      "args": ["-y", "mcp-remote", "${url}", "--header", "Authorization:Bearer \${CLIPFX_KEY}"],
+      "env": { "CLIPFX_KEY": "cfx_your_key_here" }
+    }
+  }
+}`)}
+        <h3>Cursor (<code>~/.cursor/mcp.json</code>)</h3>
+        ${pre(`{
+  "mcpServers": {
+    "clipfx": {
+      "url": "${url}",
+      "headers": { "Authorization": "Bearer cfx_your_key_here" }
+    }
+  }
+}`)}
+        <h3>VS Code (<code>.vscode/mcp.json</code>)</h3>
+        ${pre(`{
+  "servers": {
+    "clipfx": {
+      "type": "http",
+      "url": "${url}",
+      "headers": { "Authorization": "Bearer \${input:clipfx-key}" }
+    }
+  },
+  "inputs": [
+    { "id": "clipfx-key", "type": "promptString", "description": "ClipFX API key", "password": true }
+  ]
+}`)}
+        <h3>ChatGPT, Windsurf and others</h3>
+        <p>Add a remote MCP server with the URL above (Streamable HTTP). If the client lets you set headers, add <code>Authorization: Bearer cfx_...</code> for account tools.</p>
+        <h3>OpenAI and Anthropic APIs</h3>
+        ${pre(`// Anthropic Messages API (MCP connector)
+"mcp_servers": [{ "type": "url", "url": "${url}", "name": "clipfx", "authorization_token": "cfx_your_key_here" }]
+
+// OpenAI Responses API
+"tools": [{ "type": "mcp", "server_label": "clipfx", "server_url": "${url}",
+            "headers": { "Authorization": "Bearer cfx_your_key_here" }, "require_approval": "always" }]`)}
+
+        <h2 id="auth">API key</h2>
+        <p>Create one at <a href="/settings/api-keys">Settings → API keys</a>. Give an agent its own key, with an expiry and only the permissions it needs: for example <code>assets:read</code> and <code>assets:write</code> to upload, without <code>assets:delete</code>. Revoke it there any time; the agent loses access immediately. Without a key, account tools reply with how to get one.</p>
+        ${notice('', html`Agents act with your account. Many clients ask before each tool call; keep that on for <code>publish_file</code>, <code>delete_file</code> and <code>report_file</code>.`, 'shield')}
+
+        <h2 id="tools">Tools</h2>
+        <h3>Public (no key)</h3>
+        <div class="table-wrap"><table class="doc-table"><thead><tr><th>Tool</th><th>What it does</th><th>Needs</th></tr></thead><tbody>${pub.map(row)}</tbody></table></div>
+        <h3>Your account (API key)</h3>
+        <div class="table-wrap"><table class="doc-table"><thead><tr><th>Tool</th><th>What it does</th><th>Needs</th></tr></thead><tbody>${acct.map(row)}</tbody></table></div>
+        <p>Every tool has an input schema, read-only and destructive hints, and returns both JSON text and <code>structuredContent</code>. Moderation and account deletion are left out of MCP on purpose; use the <a href="/developers/api">REST API</a> for those.</p>
+
+        <h2 id="uploads">Uploading from an agent</h2>
+        <ol>
+          <li><strong>Small files</strong> (up to 3 MB): <code>upload_small_file</code> with the file as base64. It returns an <code>upload_id</code>.</li>
+          <li><strong>Any size</strong>: <code>start_upload</code> returns a URL to <code>PUT</code> the bytes to (or several parts, then <code>complete_upload</code>). Use it when the agent can run code or HTTP requests itself.</li>
+          <li><code>publish_file</code> with the <code>upload_id</code>, a title, category and license. It needs <code>confirm_rights: true</code>, which the agent should only send after you confirm you may share the file.</li>
+        </ol>
+        <p>Example request to an agent: <em>"Upload whoosh-pack.zip to ClipFX as 'Deep Whoosh Pack', category Sound Effects, CC0, tags whoosh and transition. I made it."</em></p>
+
+        <h2 id="protocol">Protocol details</h2>
+        <ul>
+          <li>Transport: Streamable HTTP, <code>POST ${url}</code>, JSON responses. Stateless: no session id, no server-sent events (<code>GET</code> answers 405).</li>
+          <li>Protocol versions: ${raw(require('../src/mcp').PROTOCOL_VERSIONS.map((v) => `<code>${v}</code>`).join(', '))}. Capabilities: tools.</li>
+          <li>CORS is open (<code>*</code>): the server uses keys, not cookies, so browser-based clients and the MCP Inspector work.</li>
+          <li>Same rate limits and rules as the website and REST API. Respect each file's license when using what you download.</li>
+        </ul>
+      </article>
+    </div>
+  </div>`;
+  return layout(ctx, {
+    title: 'MCP server',
+    description: `Connect AI agents to ${ctx.config.siteName} with the Model Context Protocol at ${url}.`,
+    body, og: { url: ctx.absolute('/developers/mcp') },
+  });
+}
+
+module.exports = { apiDocs, mcpDocs };
