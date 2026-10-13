@@ -1,6 +1,7 @@
 'use strict';
 const { html, raw, formatDate, timeAgo } = require('../src/html');
 const { layout } = require('./layout');
+const { knownApp } = require('../src/apps');
 const { icon, mark, avatar, csrfField, fieldError, invalid, notice } = require('./components');
 
 function authShell(ctx, title, inner) {
@@ -234,6 +235,11 @@ function keyExpiry(k) {
   return html`<span class="keytag">Expires ${formatDate(k.expires_at)}</span>`;
 }
 
+function appIcon(k) {
+  const app = k.app && knownApp(k.name, k.app_redirect);
+  return app ? html`<img class="keyitem-logo" src="${app.logo}" alt="${app.label}" width="18" height="18"> ` : '';
+}
+
 function apiKeys(ctx, { keys, scopes, max, created = null, values = {}, errors = {} }) {
   const all = scopes.map((s) => s.id);
   const chosen = new Set(values.scopes || []);
@@ -290,7 +296,7 @@ function apiKeys(ctx, { keys, scopes, max, created = null, values = {}, errors =
         <h2 class="panel-h">${icon('key')}Your keys <span class="dim mono">${keys.length}/${max}</span></h2>
         ${keys.length ? html`<ul class="keylist">${keys.map((k) => html`<li class="keyitem${k.expired ? ' is-expired' : ''}">
           <div class="keyitem-main">
-            <p class="keyitem-name"><strong>${k.name}</strong> ${k.app ? html`<span class="keytag keytag-full">Connected app</span> ` : ''}<code>${k.prefix}…</code></p>
+            <p class="keyitem-name">${appIcon(k)}<strong>${k.name}</strong> ${k.app ? html`<span class="keytag keytag-full">Connected app</span> ` : ''}<code>${k.prefix}…</code></p>
             <p class="keyitem-meta">${keyExpiry(k)}<span>Created ${formatDate(k.created_at)}</span><span>${k.last_used_at ? `Last used ${timeAgo(k.last_used_at)}` : 'Never used'}</span></p>
             <p class="keyitem-scopes">${k.scopes.includes('*') || all.every((id) => k.scopes.includes(id)) ? html`<span class="keytag keytag-full">Full access</span>`
     : k.scopes.map((id) => html`<span class="keytag" title="${id}">${scopeName[id] || id}</span>`)}</p>
@@ -302,18 +308,6 @@ function apiKeys(ctx, { keys, scopes, max, created = null, values = {}, errors =
     </div>
   </div>`;
   return layout(ctx, { title: 'API keys', body, noindex: true });
-}
-
-// Known apps get their logo, but only when the return address proves it: names are self-declared,
-// so "Claude" alone isn't enough. claude.ai / claude.com, or a Claude app returning to this computer.
-const KNOWN_APPS = [
-  { logo: '/static/img/apps/claude.svg', label: 'Claude', match: (name, u) => (u.protocol === 'https:' && /(^|\.)claude\.(ai|com)$/.test(u.hostname))
-    || (/^claude\b/i.test(name) && u.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(u.hostname)) },
-];
-function appLogo(client, redirectUri) {
-  let u;
-  try { u = new URL(redirectUri); } catch { return null; }
-  return KNOWN_APPS.find((a) => a.match(client.name, u)) || null;
 }
 
 // "Sign in with ClipFX": an app (usually an AI agent's MCP client) asks to use the account.
@@ -328,7 +322,7 @@ function consent(ctx, { params: p, client, scopes, errors = {} }) {
   let host;
   try { const u = new URL(p.redirect_uri); host = u.protocol === 'http:' || u.protocol === 'https:' ? u.host : u.protocol.replace(/:$/, ' app'); } catch { host = p.redirect_uri; }
   const hidden = ['client_id', 'redirect_uri', 'state', 'code_challenge', 'code_challenge_method', 'scope', 'response_type'];
-  const known = appLogo(client, p.redirect_uri);
+  const known = knownApp(client.name, p.redirect_uri);
   const expires = p.expires || '90';
   return layout(ctx, {
     title: `Connect ${client.name}`, noindex: true, bodyClass: 'is-auth',
