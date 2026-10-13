@@ -273,6 +273,8 @@ curl -L ${origin}/api/assets/SLUG/download -H "Authorization: Bearer $KEY" \\
 // server's own definitions.
 function mcpDocs(ctx) {
   const { TOOLS } = require('../src/mcp');
+  const { APPS } = require('../src/apps');
+  const logo = (id) => { const a = APPS.find((x) => x.id === id); return html`<img class="client-logo" src="/static/img/apps/${a.logo}" alt="" width="18" height="18">`; };
   const url = ctx.absolute('/mcp');
   const pre = (s) => html`<pre class="code">${s}</pre>`;
   const pub = TOOLS.filter((t) => !t.scope);
@@ -298,22 +300,26 @@ function mcpDocs(ctx) {
           <button type="button" class="btn btn-secondary btn-sm" data-copy="${url}">${icon('copy')}<span>Copy</span></button></div>
         <p><strong>Sign-in is required.</strong> When you add the server, your app opens a ClipFX page where you log in, choose what the agent may do and how long it stays connected, then press Allow. Nothing works without that (or an API key), and you can disconnect the app any time under <a href="/settings/api-keys">Settings → API keys</a>.</p>
 
+        <p class="works-h mono">Recognized apps</p>
+        <p class="hint">These show their own logo on the ClipFX sign-in screen when they connect. Any MCP client that supports OAuth sign-in can connect.</p>
+        <ul class="works">${APPS.filter((a) => a.id !== 'mcp').map((a) => html`<li><img src="/static/img/apps/${a.logo}" alt="" width="20" height="20"><span>${a.label}</span></li>`)}</ul>
+
         <h2 id="clients">Client setup</h2>
-        <h3><img class="client-logo" src="/static/img/apps/claude.svg" alt="" width="18" height="18">Claude (claude.ai, desktop and mobile)</h3>
+        <h3>${logo('claude')}Claude (claude.ai, desktop and mobile)</h3>
         <p>Settings → Connectors → Add custom connector. Name it ClipFX, paste <code>${url}</code>, then press Connect and sign in.</p>
-        <h3><img class="client-logo" src="/static/img/apps/claude.svg" alt="" width="18" height="18">Claude Code</h3>
+        <h3>${logo('claude')}Claude Code</h3>
         ${pre(`claude mcp add --transport http clipfx ${url}`)}
         <p>Then run <code>/mcp</code> in Claude Code, pick clipfx and choose Authenticate.</p>
-        <h3>ChatGPT</h3>
+        <h3>${logo('chatgpt')}ChatGPT</h3>
         <p>Settings → Connectors → Create (developer mode), paste <code>${url}</code> and choose OAuth. Sign in when asked.</p>
-        <h3>Cursor (<code>~/.cursor/mcp.json</code>)</h3>
+        <h3>${logo('cursor')}Cursor (<code>~/.cursor/mcp.json</code>)</h3>
         ${pre(`{
   "mcpServers": {
     "clipfx": { "url": "${url}" }
   }
 }`)}
         <p>Cursor shows a Login button next to the server in Settings → MCP.</p>
-        <h3>VS Code (<code>.vscode/mcp.json</code>)</h3>
+        <h3>${logo('vscode')}VS Code (<code>.vscode/mcp.json</code>)</h3>
         ${pre(`{
   "servers": {
     "clipfx": { "type": "http", "url": "${url}" }

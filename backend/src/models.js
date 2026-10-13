@@ -242,8 +242,9 @@ function createModels(db, { storage }) {
       const { key_id: id, key_scopes: scopes, key_last_used: lastUsed, ...user } = row;
       return { key: { id, scopes: scopes.split(' ').filter(Boolean), lastUsed }, user };
     },
-    list: (userId) => many(`SELECT id, name, prefix, scopes, expires_at, last_used_at, created_at, client_id FROM api_keys
-      WHERE user_id = ? ORDER BY created_at DESC`, userId),
+    list: (userId) => many(`SELECT k.id, k.name, k.prefix, k.scopes, k.expires_at, k.last_used_at, k.created_at, k.client_id, c.redirect_uris
+      FROM api_keys k LEFT JOIN oauth_clients c ON c.id = k.client_id
+      WHERE k.user_id = ? ORDER BY k.created_at DESC`, userId),
     count: (userId) => num('SELECT COUNT(*) AS n FROM api_keys WHERE user_id = ?', userId),
     revoke: (id, userId) => run('DELETE FROM api_keys WHERE id = ? AND user_id = ?', String(id), userId),
     touch: (id) => run('UPDATE api_keys SET last_used_at = ? WHERE id = ?', Date.now(), id),

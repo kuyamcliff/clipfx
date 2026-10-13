@@ -96,6 +96,8 @@ const publicKey = (row) => ({
   expires_at: row.expires_at ? Number(row.expires_at) : null, last_used_at: row.last_used_at ? Number(row.last_used_at) : null,
   created_at: Number(row.created_at), expired: !!(row.expires_at && Number(row.expires_at) <= Date.now()),
   app: !!row.client_id,
+  // Where the app returns to; the website uses it to verify which app it is before showing a logo.
+  app_redirect: row.redirect_uris ? JSON.parse(row.redirect_uris)[0] : null,
 });
 
 const scopesFor = (user) => SCOPES.filter((s) => !s.adminOnly || user.role === 'admin');

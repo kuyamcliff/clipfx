@@ -1161,4 +1161,12 @@ a, button, summary, label, input, select, textarea { touch-action: manipulation;
 .consent .scopes { margin-bottom: 16px; }
 .consent-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 18px; }
 
-.client-logo { display: inline-block; width: 18px; height: 18px; margin-right: 8px; vertical-align: -3px; }
+.client-logo { display: inline-block; width: 22px; height: 22px; margin-right: 8px; padding: 2px; vertical-align: -5px; border-radius: 4px; background: #fff; }
+.keyitem-logo { display: inline-block; width: 20px; height: 20px; margin-right: 7px; padding: 2px; vertical-align: -4px; border-radius: 4px; background: #fff; }
+.consent-app { background: #fff; }
+
+.works-h { margin: 18px 0 8px !important; color: var(--text-3); font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.04em; }
+.works { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 8px; padding: 0 !important; list-style: none; }
+.works li { display: inline-flex; align-items: center; gap: 7px; height: 34px; margin: 0; padding: 0 11px 0 8px; border: 1px solid var(--border); border-radius: var(--r); background: var(--surface-2); font-size: 13px; font-weight: 600; }
+.works li img { width: 20px; height: 20px; padding: 2px; border-radius: 4px; background: #fff; }
+.works li.works-more { padding-left: 11px; color: var(--text-3); font-weight: 500; }
