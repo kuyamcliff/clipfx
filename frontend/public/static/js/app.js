@@ -305,9 +305,11 @@
     boxes.forEach((b) => b.addEventListener('change', () => { full.checked = boxes.every((x) => x.checked); }));
     const expires = $('[data-key-expires]', keyForm);
     const date = $('[data-key-date]', keyForm);
-    const sync = () => { date.hidden = expires.value !== 'custom'; date.required = expires.value === 'custom'; };
-    expires.addEventListener('change', sync);
-    sync();
+    if (expires && date) {
+      const sync = () => { date.hidden = expires.value !== 'custom'; date.required = expires.value === 'custom'; };
+      expires.addEventListener('change', sync);
+      sync();
+    }
   }
 
   // ---- Password visibility -----------------------------------------------------------------------

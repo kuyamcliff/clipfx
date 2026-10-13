@@ -149,6 +149,7 @@ async function createApp(config, { log = console } = {}) {
   require('./routes/users')(app, ctx);
   require('./routes/admin')(app, ctx);
   apiKeys.routes(app, ctx);
+  require('./oauth').routes(app, ctx);
 
   app.use(async (req, res) => res.fail(404, 'Not found.'));
 

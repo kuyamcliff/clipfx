@@ -502,50 +502,54 @@ test('API key docs list every permission and the upload steps', opts, async () =
   assert.match((await browser().get('/llms.txt')).text_, /developers\/api/);
 });
 
-test('MCP: handshake, tools, public search, and account tools with an API key', opts, async () => {
+test('MCP: sign-in required, then handshake, tools and account tools with an API key', opts, async () => {
   let id = 0;
   const rpc = async (method, params, token, extra = {}) => {
     const headers = { 'content-type': 'application/json', accept: 'application/json, text/event-stream', ...extra };
     if (token) headers.authorization = `Bearer ${token}`;
     const res = await fetch(`${site.base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: ++id, method, params }) });
-    return { status: res.status, body: await res.json(), headers: res.headers };
+    return { status: res.status, body: await res.json().catch(() => null), headers: res.headers };
   };
-  const tool = async (name, args, token) => (await rpc('tools/call', { name, arguments: args }, token)).body.result;
 
-  const init = await rpc('initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'test', version: '1' } });
+  // No token: 401 that points at the OAuth metadata. Nothing is answered, not even initialize.
+  for (const t of [undefined, 'cfx_not-a-real-key-aaaaaaaaaaaaaaaaaaaaa', 'garbage']) {
+    const r = await rpc('initialize', { protocolVersion: '2025-06-18' }, t);
+    assert.equal(r.status, 401, String(t));
+    assert.match(r.headers.get('www-authenticate'), /Bearer resource_metadata="http:\/\/[^"]+\/\.well-known\/oauth-protected-resource\/mcp"/);
+    assert.equal(r.body.result, undefined);
+  }
+  assert.equal((await rpc('tools/list')).status, 401);
+
+  const b = browser();
+  await b.signup('agentowner');
+  const page = await b.post('/settings/api-keys', { form: { name: 'Agent', expires: '30', full: 'on' } });
+  const token = /(cfx_[\w-]{40})/.exec(page.text_)[1];
+  const tool = async (name, args) => (await rpc('tools/call', { name, arguments: args }, token)).body.result;
+
+  const init = await rpc('initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'test', version: '1' } }, token);
   assert.equal(init.status, 200);
   assert.equal(init.body.result.protocolVersion, '2025-06-18');
   assert.equal(init.body.result.serverInfo.name, 'clipfx');
   assert.ok(init.body.result.capabilities.tools);
   assert.equal(init.headers.get('access-control-allow-origin'), '*');
   assert.equal(init.headers.get('set-cookie'), null, 'no cookies on /mcp');
-  assert.equal((await rpc('initialize', { protocolVersion: '1999-01-01' })).body.result.protocolVersion, '2025-11-25');
+  assert.equal((await rpc('initialize', { protocolVersion: '1999-01-01' }, token)).body.result.protocolVersion, '2025-11-25');
 
   // Notifications get 202 and no body.
-  const note = await fetch(`${site.base}/mcp`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }) });
+  const note = await fetch(`${site.base}/mcp`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` }, body: JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }) });
   assert.equal(note.status, 202);
 
-  const { tools } = (await rpc('tools/list')).body.result;
+  const { tools } = (await rpc('tools/list', undefined, token)).body.result;
   for (const n of ['search_files', 'get_file', 'get_download_link', 'list_categories', 'whoami', 'list_my_files', 'upload_small_file', 'publish_file', 'edit_file', 'delete_file', 'toggle_save', 'update_profile']) {
     assert.ok(tools.some((t) => t.name === n), n);
   }
   assert.ok(tools.every((t) => t.inputSchema.type === 'object' && t.description));
   assert.equal(tools.find((t) => t.name === 'delete_file').annotations.destructiveHint, true);
 
-  // Public tools work without a key; account tools explain how to get one.
   const cats = await tool('list_categories', {});
   assert.equal(cats.isError, false);
   assert.ok(cats.structuredContent.categories.some((c) => c.id === 'software'));
-  const nokey = await tool('list_my_files', {});
-  assert.equal(nokey.isError, true);
-  assert.match(nokey.content[0].text, /settings\/api-keys/);
-
-  // A key (made through settings) unlocks the account tools.
-  const b = browser();
-  await b.signup('agentowner');
-  const page = await b.post('/settings/api-keys', { form: { name: 'Agent', expires: '30', full: 'on' } });
-  const token = /(cfx_[\w-]{40})/.exec(page.text_)[1];
-  assert.equal((await tool('whoami', {}, token)).structuredContent.username, 'agentowner');
+  assert.equal((await tool('whoami', {})).structuredContent.username, 'agentowner');
 
   const up = await tool('upload_small_file', { file_name: 'agent-pack.zip', content_base64: Buffer.from('PK agent made this').toString('base64') }, token);
   assert.equal(up.isError, false, up.content[0].text);
@@ -573,12 +577,11 @@ test('MCP: handshake, tools, public search, and account tools with an API key', 
   assert.equal((await tool('whoami', {}, token)).structuredContent.bio, 'Made by an agent');
 
   assert.equal((await tool('delete_file', { slug }, token)).isError, false);
-  assert.equal((await tool('get_file', { slug })).isError, true);
+  assert.equal((await tool('get_file', { slug })).isError, true, 'deleted');
 
   // A bad key is reported clearly; unknown tools are JSON-RPC errors.
-  assert.match((await tool('whoami', {}, 'cfx_not-a-real-key-aaaaaaaaaaaaaaaaaaaaa')).content[0].text, /invalid, expired or revoked/);
-  assert.equal((await rpc('tools/call', { name: 'nope', arguments: {} })).body.error.code, -32602);
-  assert.equal((await rpc('does/not/exist')).body.error.code, -32601);
+  assert.equal((await rpc('tools/call', { name: 'nope', arguments: {} }, token)).body.error.code, -32602);
+  assert.equal((await rpc('does/not/exist', undefined, token)).body.error.code, -32601);
 
   // Browsers opening /mcp get the setup guide.
   const get = await fetch(`${site.base}/mcp`, { headers: { accept: 'text/html' }, redirect: 'manual' });
@@ -595,4 +598,81 @@ test('MCP setup guide: linked, lists every tool, client configs use the real URL
   assert.match(page.text_, new RegExp(`claude mcp add --transport http clipfx ${site.base}/mcp`));
   assert.match((await browser().get('/developers')).text_, /href="\/developers\/mcp"/);
   assert.match((await browser().get('/llms.txt')).text_, /\/mcp : MCP server/);
+});
+
+
+test('MCP sign-in: discovery, registration, consent page and PKCE token, then the token works on /mcp', opts, async () => {
+  const crypto = require('node:crypto');
+  const prm = await (await fetch(`${site.base}/.well-known/oauth-protected-resource/mcp`)).json();
+  assert.equal(prm.resource, `${site.base}/mcp`);
+  const asUrl = prm.authorization_servers[0];
+  const meta = await (await fetch(`${asUrl}/.well-known/oauth-authorization-server`)).json();
+  assert.deepEqual(meta.code_challenge_methods_supported, ['S256']);
+
+  const redirect = 'http://127.0.0.1:41999/callback';
+  const reg = await fetch(meta.registration_endpoint, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ client_name: 'Test Agent', redirect_uris: [redirect] }) });
+  assert.equal(reg.status, 201);
+  const { client_id } = await reg.json();
+
+  const verifier = crypto.randomBytes(32).toString('base64url');
+  const challenge = crypto.createHash('sha256').update(verifier).digest('base64url');
+  const q = new URLSearchParams({ response_type: 'code', client_id, redirect_uri: redirect, code_challenge: challenge, code_challenge_method: 'S256', state: 'xyz', scope: 'assets:read profile:read', resource: prm.resource });
+  const authorizePath = `/oauth/authorize?${q}`;
+
+  // Signed out: sent to log in, and back here afterwards.
+  const b = browser();
+  let r = await b.get(authorizePath);
+  assert.equal(r.status, 302);
+  assert.equal(r.headers.get('location'), `/login?next=${encodeURIComponent(authorizePath)}`);
+
+  await b.signup('oauthuser');
+  r = await b.get(authorizePath);
+  assert.equal(r.status, 200);
+  assert.match(r.text_, /Test Agent<\/strong> wants to use your ClipFX account/);
+  assert.match(r.text_, /127\.0\.0\.1:41999/);
+  assert.match(r.text_, /value="assets:read" checked/);
+  assert.doesNotMatch(r.text_, /value="assets:delete" checked/);
+  // Browsers apply form-action to the redirect after Allow, so the app's return address must be allowed.
+  assert.match(r.headers.get('content-security-policy'), /form-action 'self' http:\/\/127\.0\.0\.1:41999;/);
+  assert.ok(!prm.scopes_supported.includes('*') && !prm.scopes_supported.includes('account:delete'));
+
+  // Unknown app or unregistered redirect: an error page, never a redirect.
+  assert.equal((await b.get(`/oauth/authorize?${new URLSearchParams({ ...Object.fromEntries(q), redirect_uri: 'https://evil.example/cb' })}`)).status, 400);
+  assert.equal((await b.get(`/oauth/authorize?${new URLSearchParams({ ...Object.fromEntries(q), client_id: 'app_nope' })}`)).status, 400);
+
+  // Cancel goes back with access_denied.
+  const form = { ...Object.fromEntries(q), scopes: ['assets:read', 'profile:read'], expires: '30' };
+  r = await b.post('/oauth/authorize', { form: { ...form, decision: 'deny' } });
+  assert.equal(r.status, 303);
+  assert.match(r.headers.get('location'), /^http:\/\/127\.0\.0\.1:41999\/callback\?error=access_denied/);
+
+  r = await b.post('/oauth/authorize', { form: { ...form, decision: 'allow' } });
+  assert.equal(r.status, 303);
+  const back = new URL(r.headers.get('location'));
+  assert.equal(back.origin + back.pathname, redirect);
+  assert.equal(back.searchParams.get('state'), 'xyz');
+  const code = back.searchParams.get('code');
+
+  // Token exchange, form-encoded like most OAuth clients send it.
+  const tok = await fetch(meta.token_endpoint, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ grant_type: 'authorization_code', code, code_verifier: verifier, client_id, redirect_uri: redirect }) });
+  assert.equal(tok.status, 200);
+  assert.equal(tok.headers.get('access-control-allow-origin'), '*');
+  const t = await tok.json();
+  assert.equal(t.token_type, 'Bearer');
+  assert.equal(t.scope, 'assets:read profile:read');
+
+  const call = (method, params) => fetch(`${site.base}/mcp`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${t.access_token}` }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }) }).then((x) => x.json());
+  assert.equal((await call('tools/call', { name: 'whoami', arguments: {} })).result.structuredContent.username, 'oauthuser');
+  const denied = (await call('tools/call', { name: 'list_saved', arguments: {} })).result;
+  assert.equal(denied.isError, true);
+  assert.match(denied.content[0].text, /saved:read/);
+
+  // It shows up as a connected app, and disconnecting it ends access.
+  const keys = await b.get('/settings/api-keys');
+  assert.match(keys.text_, /Test Agent<\/strong> <span class="keytag keytag-full">Connected app/);
+  const keyId = /\/settings\/api-keys\/([\w-]+)\/revoke/.exec(keys.text_)[1];
+  await b.post(`/settings/api-keys/${keyId}/revoke`, { form: {} });
+  const after = await fetch(`${site.base}/mcp`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${t.access_token}` }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'ping' }) });
+  assert.equal(after.status, 401);
+  assert.match(after.headers.get('www-authenticate'), /error="invalid_token"/);
 });

@@ -277,16 +277,16 @@ function mcpDocs(ctx) {
   const pre = (s) => html`<pre class="code">${s}</pre>`;
   const pub = TOOLS.filter((t) => !t.scope);
   const acct = TOOLS.filter((t) => t.scope);
-  const row = (t) => html`<tr><td><code>${t.name}</code></td><td>${t.description}</td><td>${t.scope ? html`<code>${t.scope === 'any' ? 'any key' : t.scope}</code>` : html`<span class="dim">none</span>`}</td></tr>`;
-  const sections = [['connect', 'Connect'], ['clients', 'Client setup'], ['auth', 'API key'], ['tools', 'Tools'], ['uploads', 'Uploading from an agent'], ['protocol', 'Protocol details']];
+  const row = (t) => html`<tr><td><code>${t.name}</code></td><td>${t.description}</td><td>${t.scope && t.scope !== 'any' ? html`<code>${t.scope}</code>` : html`<span class="dim">any</span>`}</td></tr>`;
+  const sections = [['connect', 'Connect'], ['clients', 'Client setup'], ['auth', 'API keys instead'], ['tools', 'Tools'], ['uploads', 'Uploading from an agent'], ['protocol', 'Protocol details']];
   const body = html`
   <div class="container docs">
     <nav class="crumbs" aria-label="Breadcrumb"><a href="/developers">API and AI access</a>${icon('chevronRight')}<span>MCP server</span></nav>
     <header class="pagehead doc-head"><div>
       <h1>MCP server</h1>
-      <p class="lede">Connect Claude, ChatGPT, Cursor, VS Code and other AI agents to ${ctx.config.siteName} with the Model Context Protocol. Search and download for free, or add an API key to let the agent manage your files.</p>
+      <p class="lede">Connect Claude, ChatGPT, Cursor, VS Code and other AI agents to your ${ctx.config.siteName} account with the Model Context Protocol. Sign in once, choose what the agent may do, and it can search, download, upload and manage your files.</p>
     </div>
-    <a class="btn btn-primary btn-sm" href="${ctx.user ? '/settings/api-keys' : '/login?next=/settings/api-keys'}">${icon('key')}<span>Get an API key</span></a></header>
+    <a class="btn btn-secondary btn-sm" href="${ctx.user ? '/settings/api-keys' : '/login?next=/settings/api-keys'}">${icon('key')}<span>Connected apps and keys</span></a></header>
 
     <div class="docs-layout">
       <nav class="docs-toc" aria-label="On this page"><p class="docs-toc-h mono">On this page</p>
@@ -296,68 +296,52 @@ function mcpDocs(ctx) {
         <p>Server URL:</p>
         <div class="newkey-row"><code class="newkey-token" data-select-on-focus tabindex="0">${url}</code>
           <button type="button" class="btn btn-secondary btn-sm" data-copy="${url}">${icon('copy')}<span>Copy</span></button></div>
-        <ul>
-          <li><strong>No key:</strong> search, file details, download links, creators and categories work right away.</li>
-          <li><strong>With a key:</strong> the agent can also upload and publish files, edit and delete them, manage saved files and update your profile, within the <a href="/developers/api#permissions">permissions</a> you gave the key. Send it as <code>Authorization: Bearer cfx_...</code>.</li>
-        </ul>
+        <p><strong>Sign-in is required.</strong> When you add the server, your app opens a ClipFX page where you log in, choose what the agent may do and how long it stays connected, then press Allow. Nothing works without that (or an API key), and you can disconnect the app any time under <a href="/settings/api-keys">Settings → API keys</a>.</p>
 
         <h2 id="clients">Client setup</h2>
+        <h3>Claude (claude.ai, desktop and mobile)</h3>
+        <p>Settings → Connectors → Add custom connector. Name it ClipFX, paste <code>${url}</code>, then press Connect and sign in.</p>
         <h3>Claude Code</h3>
-        ${pre(`claude mcp add --transport http clipfx ${url} \\
-  --header "Authorization: Bearer cfx_your_key_here"`)}
-        <h3>Claude (claude.ai and desktop app)</h3>
-        <p>Settings → Connectors → Add custom connector, and paste <code>${url}</code>. This gives the public tools. For account tools in Claude Desktop, use <code>mcp-remote</code> so the key is sent as a header:</p>
-        ${pre(`{
-  "mcpServers": {
-    "clipfx": {
-      "command": "npx",
-      "args": ["-y", "mcp-remote", "${url}", "--header", "Authorization:Bearer \${CLIPFX_KEY}"],
-      "env": { "CLIPFX_KEY": "cfx_your_key_here" }
-    }
-  }
-}`)}
+        ${pre(`claude mcp add --transport http clipfx ${url}`)}
+        <p>Then run <code>/mcp</code> in Claude Code, pick clipfx and choose Authenticate.</p>
+        <h3>ChatGPT</h3>
+        <p>Settings → Connectors → Create (developer mode), paste <code>${url}</code> and choose OAuth. Sign in when asked.</p>
         <h3>Cursor (<code>~/.cursor/mcp.json</code>)</h3>
         ${pre(`{
   "mcpServers": {
-    "clipfx": {
-      "url": "${url}",
-      "headers": { "Authorization": "Bearer cfx_your_key_here" }
-    }
+    "clipfx": { "url": "${url}" }
   }
 }`)}
+        <p>Cursor shows a Login button next to the server in Settings → MCP.</p>
         <h3>VS Code (<code>.vscode/mcp.json</code>)</h3>
         ${pre(`{
   "servers": {
-    "clipfx": {
-      "type": "http",
-      "url": "${url}",
-      "headers": { "Authorization": "Bearer \${input:clipfx-key}" }
-    }
-  },
-  "inputs": [
-    { "id": "clipfx-key", "type": "promptString", "description": "ClipFX API key", "password": true }
-  ]
+    "clipfx": { "type": "http", "url": "${url}" }
+  }
 }`)}
-        <h3>ChatGPT, Windsurf and others</h3>
-        <p>Add a remote MCP server with the URL above (Streamable HTTP). If the client lets you set headers, add <code>Authorization: Bearer cfx_...</code> for account tools.</p>
-        <h3>OpenAI and Anthropic APIs</h3>
-        ${pre(`// Anthropic Messages API (MCP connector)
+        <p>Start the server and VS Code asks you to sign in.</p>
+        <h3>Other clients</h3>
+        <p>Any client that supports remote MCP servers with OAuth (Streamable HTTP) works with just the URL. Clients that only use stdio can go through <code>npx -y mcp-remote ${url}</code>, which handles the sign-in.</p>
+
+        <h2 id="auth">API keys instead of sign-in</h2>
+        <p>For scripts, servers and the model APIs, where nobody can click Allow, send an <a href="/developers/api">API key</a> from <a href="/settings/api-keys">Settings → API keys</a> as <code>Authorization: Bearer cfx_...</code>.</p>
+        ${pre(`claude mcp add --transport http clipfx ${url} --header "Authorization: Bearer cfx_your_key_here"
+
+// Anthropic Messages API (MCP connector)
 "mcp_servers": [{ "type": "url", "url": "${url}", "name": "clipfx", "authorization_token": "cfx_your_key_here" }]
 
 // OpenAI Responses API
 "tools": [{ "type": "mcp", "server_label": "clipfx", "server_url": "${url}",
             "headers": { "Authorization": "Bearer cfx_your_key_here" }, "require_approval": "always" }]`)}
-
-        <h2 id="auth">API key</h2>
-        <p>Create one at <a href="/settings/api-keys">Settings → API keys</a>. Give an agent its own key, with an expiry and only the permissions it needs: for example <code>assets:read</code> and <code>assets:write</code> to upload, without <code>assets:delete</code>. Revoke it there any time; the agent loses access immediately. Without a key, account tools reply with how to get one.</p>
+        <p>Give each agent its own key (or connection) with only the permissions it needs, for example <code>assets:read</code> and <code>assets:write</code> to upload, without <code>assets:delete</code>.</p>
         ${notice('', html`Agents act with your account. Many clients ask before each tool call; keep that on for <code>publish_file</code>, <code>delete_file</code> and <code>report_file</code>.`, 'shield')}
 
         <h2 id="tools">Tools</h2>
-        <h3>Public (no key)</h3>
-        <div class="table-wrap"><table class="doc-table"><thead><tr><th>Tool</th><th>What it does</th><th>Needs</th></tr></thead><tbody>${pub.map(row)}</tbody></table></div>
-        <h3>Your account (API key)</h3>
-        <div class="table-wrap"><table class="doc-table"><thead><tr><th>Tool</th><th>What it does</th><th>Needs</th></tr></thead><tbody>${acct.map(row)}</tbody></table></div>
-        <p>Every tool has an input schema, read-only and destructive hints, and returns both JSON text and <code>structuredContent</code>. Moderation and account deletion are left out of MCP on purpose; use the <a href="/developers/api">REST API</a> for those.</p>
+        <h3>The library</h3>
+        <div class="table-wrap"><table class="doc-table"><thead><tr><th>Tool</th><th>What it does</th><th>Permission</th></tr></thead><tbody>${pub.map(row)}</tbody></table></div>
+        <h3>Your account</h3>
+        <div class="table-wrap"><table class="doc-table"><thead><tr><th>Tool</th><th>What it does</th><th>Permission</th></tr></thead><tbody>${acct.map(row)}</tbody></table></div>
+        <p>All tools need a signed-in connection; the permission column is what the connection must also allow. Every tool has an input schema, read-only and destructive hints, and returns both JSON text and <code>structuredContent</code>. Moderation and account deletion are left out of MCP on purpose; use the <a href="/developers/api">REST API</a> for those.</p>
 
         <h2 id="uploads">Uploading from an agent</h2>
         <ol>
@@ -371,7 +355,8 @@ function mcpDocs(ctx) {
         <ul>
           <li>Transport: Streamable HTTP, <code>POST ${url}</code>, JSON responses. Stateless: no session id, no server-sent events (<code>GET</code> answers 405).</li>
           <li>Protocol versions: ${raw(require('../src/mcp').PROTOCOL_VERSIONS.map((v) => `<code>${v}</code>`).join(', '))}. Capabilities: tools.</li>
-          <li>CORS is open (<code>*</code>): the server uses keys, not cookies, so browser-based clients and the MCP Inspector work.</li>
+          <li>Authorization (MCP spec): requests without a valid token get <code>401</code> with <code>WWW-Authenticate: Bearer resource_metadata="${ctx.absolute('/.well-known/oauth-protected-resource/mcp')}"</code>. The authorization server metadata is at <code>/.well-known/oauth-authorization-server</code>: OAuth 2.1 authorization code flow, PKCE (S256) required, dynamic client registration at <code>/oauth/register</code>, public clients only. The access token is an API key scoped to what the user approved.</li>
+          <li>CORS is open (<code>*</code>): the server uses bearer tokens, not cookies, so browser-based clients and the MCP Inspector work.</li>
           <li>Same rate limits and rules as the website and REST API. Respect each file's license when using what you download.</li>
         </ul>
       </article>
