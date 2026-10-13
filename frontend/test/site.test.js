@@ -676,3 +676,19 @@ test('MCP sign-in: discovery, registration, consent page and PKCE token, then th
   assert.equal(after.status, 401);
   assert.match(after.headers.get('www-authenticate'), /error="invalid_token"/);
 });
+
+test('consent page shows the Claude logo only for real Claude return addresses', opts, async () => {
+  const b = browser();
+  await b.signup('logocheck');
+  const page = async (name, redirect) => {
+    const reg = await (await fetch(`${site.base}/oauth/register`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ client_name: name, redirect_uris: [redirect] }) })).json();
+    const q = new URLSearchParams({ response_type: 'code', client_id: reg.client_id, redirect_uri: redirect, code_challenge: 'x'.repeat(43), code_challenge_method: 'S256' });
+    return (await b.get(`/oauth/authorize?${q}`)).text_;
+  };
+  assert.match(await page('Claude', 'https://claude.ai/api/mcp/auth_callback'), /src="\/static\/img\/apps\/claude\.svg" alt="Claude"/);
+  assert.match(await page('Claude Code', 'http://localhost:51234/callback'), /apps\/claude\.svg/);
+  assert.doesNotMatch(await page('Claude', 'https://claude.ai.evil.example/cb'), /apps\/claude\.svg/);
+  assert.doesNotMatch(await page('Claude', 'https://evil.example/cb'), /apps\/claude\.svg/);
+  assert.doesNotMatch(await page('Totally Legit', 'http://127.0.0.1:5000/cb'), /apps\/claude\.svg/);
+  assert.equal((await fetch(`${site.base}/static/img/apps/claude.svg`)).status, 200);
+});

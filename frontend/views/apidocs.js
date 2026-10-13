@@ -299,9 +299,9 @@ function mcpDocs(ctx) {
         <p><strong>Sign-in is required.</strong> When you add the server, your app opens a ClipFX page where you log in, choose what the agent may do and how long it stays connected, then press Allow. Nothing works without that (or an API key), and you can disconnect the app any time under <a href="/settings/api-keys">Settings → API keys</a>.</p>
 
         <h2 id="clients">Client setup</h2>
-        <h3>Claude (claude.ai, desktop and mobile)</h3>
+        <h3><img class="client-logo" src="/static/img/apps/claude.svg" alt="" width="18" height="18">Claude (claude.ai, desktop and mobile)</h3>
         <p>Settings → Connectors → Add custom connector. Name it ClipFX, paste <code>${url}</code>, then press Connect and sign in.</p>
-        <h3>Claude Code</h3>
+        <h3><img class="client-logo" src="/static/img/apps/claude.svg" alt="" width="18" height="18">Claude Code</h3>
         ${pre(`claude mcp add --transport http clipfx ${url}`)}
         <p>Then run <code>/mcp</code> in Claude Code, pick clipfx and choose Authenticate.</p>
         <h3>ChatGPT</h3>

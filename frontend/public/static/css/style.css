@@ -1156,6 +1156,9 @@ a, button, summary, label, input, select, textarea { touch-action: manipulation;
 .consent-link .i { width: 18px; height: 18px; color: var(--text-3); }
 .consent-app { display: grid; place-items: center; width: 40px; height: 40px; border-radius: var(--r); background: var(--surface-2); border: 1px solid var(--border); }
 .consent-app .i { width: 20px; height: 20px; color: var(--link); }
+.consent-app img { width: 24px; height: 24px; display: block; }
 .consent .notice { margin: 14px 0 18px; }
 .consent .scopes { margin-bottom: 16px; }
 .consent-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 18px; }
+
+.client-logo { display: inline-block; width: 18px; height: 18px; margin-right: 8px; vertical-align: -3px; }
