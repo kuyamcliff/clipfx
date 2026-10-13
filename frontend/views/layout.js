@@ -20,6 +20,7 @@ function layout(ctx, { title, description, body, og = {}, noindex = false, ldJso
     <a href="/dashboard"${here('/dashboard')}>${icon('grid')}<span>My uploads</span></a>
     <a href="/saved"${here('/saved')}>${icon('bookmark')}<span>Saved</span></a>
     <a href="/settings"${here('/settings')}>${icon('settings')}<span>Settings</span></a>
+    <a href="/settings/api-keys"${here('/settings/api-keys')}>${icon('code')}<span>API keys</span></a>
     ${isAdmin ? html`<a href="/admin"${here('/admin')}>${icon('shield')}<span>Moderation</span>${ctx.openReports ? html`<span class="badge">${ctx.openReports}</span>` : ''}</a>` : ''}
     <form method="post" action="/logout">${csrfField(ctx)}<button type="submit">${icon('logout')}<span>Log out</span></button></form>` : '';
 

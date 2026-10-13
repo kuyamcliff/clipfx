@@ -8,7 +8,7 @@ const { Pool, types } = require('pg');
 types.setTypeParser(20, (v) => Number(v));
 types.setTypeParser(1700, (v) => Number(v));
 
-const TABLES = ['users', 'sessions', 'reset_tokens', 'assets', 'daily_downloads', 'favorites', 'reports', 'uploads', 'blocked_hashes', 'oauth_accounts'];
+const TABLES = ['users', 'sessions', 'reset_tokens', 'assets', 'daily_downloads', 'favorites', 'reports', 'uploads', 'blocked_hashes', 'oauth_accounts', 'api_keys'];
 
 const schemaSql = (SCHEMA_NAME) => `
 CREATE SCHEMA IF NOT EXISTS ${SCHEMA_NAME};
@@ -133,6 +133,20 @@ CREATE TABLE IF NOT EXISTS oauth_accounts (
   PRIMARY KEY (provider, subject)
 );
 CREATE INDEX IF NOT EXISTS oauth_accounts_user ON oauth_accounts(user_id);
+
+-- Personal API keys. Only a hash of the key is stored; the key itself is shown once.
+CREATE TABLE IF NOT EXISTS api_keys (
+  id TEXT PRIMARY KEY,
+  user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  prefix TEXT NOT NULL,
+  token_hash TEXT NOT NULL UNIQUE,
+  scopes TEXT NOT NULL,
+  expires_at BIGINT,
+  last_used_at BIGINT,
+  created_at BIGINT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS api_keys_user ON api_keys(user_id);
 
 CREATE TABLE IF NOT EXISTS blocked_hashes (
   sha256 TEXT PRIMARY KEY,

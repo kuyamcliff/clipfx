@@ -444,3 +444,60 @@ test('open to AI: robots, llms.txt and the API docs', opts, async () => {
   assert.match(llms.text_, /\/api\/assets\?q=/);
   assert.match((await b.get('/developers')).text_, /api\/assets\/\{slug\}/);
 });
+
+test('API keys: create from settings, shown once, used through the proxy, revoked', opts, async () => {
+  const b = browser();
+  await b.signup('keymaker');
+  let page = await b.get('/settings/api-keys');
+  assert.equal(page.status, 200);
+  assert.match(page.text_, /Full access/);
+  assert.match(page.text_, /assets:write/);
+
+  // Validation errors re-render with the name kept.
+  page = await b.post('/settings/api-keys', { form: { name: 'Reader', expires: '30' } });
+  assert.equal(page.status, 400);
+  assert.match(page.text_, /Pick at least one permission/);
+  assert.match(page.text_, /value="Reader"/);
+
+  page = await b.post('/settings/api-keys', { form: { name: 'Reader', expires: '30', scopes: ['assets:read', 'saved:read'] } });
+  assert.equal(page.status, 200);
+  assert.equal(page.headers.get('cache-control'), 'no-store');
+  const token = /(cfx_[\w-]{40})/.exec(page.text_)[1];
+  assert.match(page.text_, /won't be shown again/);
+
+  // Listed by name and prefix, never the token itself.
+  page = await b.get('/settings/api-keys');
+  assert.ok(!page.text_.includes(token));
+  assert.match(page.text_, new RegExp(token.slice(0, 12)));
+  assert.match(page.text_, /Never used/);
+
+  // The key works through the website's /api proxy, with no cookies.
+  const call = (p) => fetch(site.base + p, { headers: { authorization: `Bearer ${token}` } });
+  assert.equal((await call('/api/me/assets')).status, 200);
+  const denied = await fetch(site.base + '/api/uploads', { method: 'POST', headers: { 'x-api-key': token, 'content-type': 'application/json' }, body: JSON.stringify({ files: [] }) });
+  assert.equal(denied.status, 403);
+  assert.equal((await denied.json()).missing_scope, 'assets:write');
+
+  // Full access with a custom expiry date.
+  const date = new Date(Date.now() + 10 * 24 * 3600 * 1000).toISOString().slice(0, 10);
+  page = await b.post('/settings/api-keys', { form: { name: 'Everything', expires: 'custom', expiresAt: date, full: 'on' } });
+  assert.equal(page.status, 200);
+  assert.match(page.text_, /Full access/);
+
+  const id = /\/settings\/api-keys\/([\w-]+)\/revoke/.exec((await b.get('/settings/api-keys')).text_.split('Reader')[1])[1];
+  const revoked = await b.post(`/settings/api-keys/${id}/revoke`, { form: {} });
+  assert.equal(revoked.status, 303);
+  assert.equal((await call('/api/me/assets')).status, 401);
+});
+
+test('API key docs list every permission and the upload steps', opts, async () => {
+  const page = await browser().get('/developers/api');
+  assert.equal(page.status, 200);
+  for (const s of ['assets:read', 'assets:write', 'assets:delete', 'saved:read', 'saved:write', 'profile:read', 'profile:write', 'reports:write', 'account:delete', 'admin']) {
+    assert.match(page.text_, new RegExp(`<code>${s}</code>`), s);
+  }
+  assert.match(page.text_, /Authorization: Bearer cfx_/);
+  assert.match(page.text_, /X-Unlock-Token/);
+  assert.match((await browser().get('/developers')).text_, /href="\/developers\/api"/);
+  assert.match((await browser().get('/llms.txt')).text_, /developers\/api/);
+});

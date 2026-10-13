@@ -62,7 +62,7 @@ function createFrontend(config, { log = console } = {}) {
     if (meta && Date.now() - metaAt < META_TTL) return meta;
     const r = await backend.call(req, 'GET', '/api/meta');
     if (r.status !== 200) return meta || { ...FALLBACK_META, catalog: buildCatalog(FALLBACK_META.catalog), unavailable: true };
-    meta = { config: r.data.config, catalog: buildCatalog(r.data.catalog) };
+    meta = { config: r.data.config, catalog: buildCatalog(r.data.catalog), apiScopes: r.data.apiScopes || [] };
     metaAt = Date.now();
     return meta;
   }
@@ -121,7 +121,7 @@ function createFrontend(config, { log = console } = {}) {
       const [m, session] = await Promise.all([getMeta(req), req.api('GET', '/api/session')]);
       const s = session.status === 200 ? session.data : {};
       req.ctx = {
-        config: m.config, catalog: m.catalog, user: s.user || null, openReports: s.openReports || 0,
+        config: m.config, catalog: m.catalog, apiScopes: m.apiScopes || [], user: s.user || null, openReports: s.openReports || 0,
         csrf: req.cookies.csrf, flash, path: req.path, query: req.query,
         theme: ['light', 'dark'].includes(req.cookies.theme) ? req.cookies.theme : '',
         asset: (p) => `${p}?v=${config.assetVersion}`,
@@ -146,7 +146,7 @@ function createFrontend(config, { log = console } = {}) {
       res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
       res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
       if (config.cookieSecure) res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
-      res.setHeader('Cache-Control', 'private, no-cache');
+      if (!res.getHeader('Cache-Control')) res.setHeader('Cache-Control', 'private, no-cache');
       return res.status(status).type('html').send(String(view(ctx, data)));
     };
     res.fail = (status, title, message) => res.view(views.error, { status, title, message }, status);
@@ -485,6 +485,35 @@ function createFrontend(config, { log = console } = {}) {
     rerender: (req, res, { errors }) => renderSettings(req, res, { errors, status: 400 }),
   }));
 
+  app.get('/developers/api', async (req, res) => res.view(views.apiDocs));
+
+  // ---- API keys -------------------------------------------------------------------------
+  // A new key is rendered straight into the response (never put in a cookie or a redirect),
+  // so it only ever exists on the screen of the person who made it.
+
+  const renderKeys = async (req, res, extra = {}, status = 200) => {
+    const r = await req.api('GET', '/api/me/keys');
+    if (r.status !== 200) return res.apiError(r);
+    res.setHeader('Cache-Control', 'no-store');
+    return res.view(views.apiKeys, { keys: r.data.keys, scopes: r.data.scopes, max: r.data.max, ...extra }, status);
+  };
+  app.get('/settings/api-keys', requireUser, (req, res) => renderKeys(req, res));
+  app.post('/settings/api-keys', requireUser, async (req, res) => {
+    const b = req.body;
+    const list = (v) => (Array.isArray(v) ? v : v ? [v] : []);
+    const payload = { name: b.name, scopes: b.full === 'on' ? 'all' : list(b.scopes) };
+    if (b.expires === 'custom') payload.expiresAt = b.expiresAt; else payload.expires = b.expires === 'never' ? 'never' : Number(b.expires);
+    const r = await req.api('POST', '/api/me/keys', payload);
+    if (r.status === 201) return renderKeys(req, res, { created: { key: r.data.key, token: r.data.token } });
+    if (r.status === 400) {
+      return renderKeys(req, res, { errors: r.data.errors || { name: r.data.error }, values: { ...b, scopes: list(b.scopes) } }, 400);
+    }
+    return res.apiError(r);
+  });
+  app.post('/settings/api-keys/:id/revoke', requireUser, formAction({
+    api: (req) => `/api/me/keys/${encodeURIComponent(req.params.id)}/revoke`, body: () => ({}), redirect: '/settings/api-keys',
+  }));
+
   // ---- Moderation -----------------------------------------------------------------------
 
   app.get('/admin', requireUser, async (req, res) => {
@@ -552,6 +581,7 @@ ${m.catalog.categories.map((c) => `- [${c.name}](${origin}/browse?category=${c.i
 - ${origin}/api/assets/{slug} : one asset with its license, file details and creator
 - ${origin}/api/users/{username} : a creator's profile and uploads
 - ${origin}/api/creators : most downloaded creators
+- ${origin}/developers/api : API keys for acting on a user's own account (upload, edit, delete, saved files, profile), with scoped permissions
 - ${origin}/api/meta : categories, software, licenses and accepted file types
 - Asset pages live at ${origin}/a/{slug}; downloads at ${origin}/a/{slug}/download
 
@@ -590,7 +620,7 @@ ${m.catalog.categories.map((c) => `- [${c.name}](${origin}/browse?category=${c.i
   app.get('/sitemaps/pages.xml', async (req, res) => {
     const origin = siteOrigin(req);
     const m = await getMeta(req);
-    const paths = ['/', '/browse', ...m.catalog.categories.map((c) => `/browse?category=${encodeURIComponent(c.id)}`), ...STATIC_PAGES.map((p) => `/${p}`)];
+    const paths = ['/', '/browse', ...m.catalog.categories.map((c) => `/browse?category=${encodeURIComponent(c.id)}`), ...STATIC_PAGES.map((p) => `/${p}`), '/developers/api'];
     return sendXml(res, `<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${paths.map((p) => urlEntry(origin + p)).join('')}</urlset>`);
   });
 

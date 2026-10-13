@@ -102,7 +102,9 @@ module.exports = function assetRoutes(app, ctx) {
   // hash, so changing the password locks everyone out again.
   const unlockCookie = (row) => `ul_${row.slug}`;
   const unlockValue = (row) => crypto.createHmac('sha256', config.storageSecret).update(`${row.slug}:${row.password_hash}`).digest('base64url');
-  const isUnlocked = (req, row) => !row.password_hash || safeEqual(req.cookies[unlockCookie(row)], unlockValue(row));
+  // Browsers keep the unlock in a cookie; API clients send it back in the X-Unlock-Token header.
+  const isUnlocked = (req, row) => !row.password_hash
+    || safeEqual(req.cookies[unlockCookie(row)] || (req.apiKey && req.get('x-unlock-token')) || '', unlockValue(row));
   // The private manage key that anonymous uploaders (or anyone they share it with) edit and delete with.
   const manageKeyOf = (req) => String(req.get('x-manage-key') || req.query.key || (req.body && req.body.manageKey) || '');
   const hasManageKey = (req, row) => !!row.manage_hash && manageKeyOf(req).length > 10 && safeEqual(sha(manageKeyOf(req)), row.manage_hash);
@@ -198,6 +200,7 @@ module.exports = function assetRoutes(app, ctx) {
     if (!(await verifyPassword(String(req.body.password || ''), row.password_hash))) {
       return res.fail(400, 'Wrong password.', { password: 'Wrong password. Try again.' });
     }
+    if (req.apiKey) return res.ok({ message: 'Unlocked. Send unlock_token in the X-Unlock-Token header.', unlock_token: unlockValue(row) });
     res.cookie(unlockCookie(row), unlockValue(row), { ...cookieBase, maxAge: 12 * 3600 * 1000 });
     return res.ok({ message: 'Unlocked. You can download it now.' });
   });

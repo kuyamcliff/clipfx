@@ -8,6 +8,8 @@ module.exports = function metaRoutes(app, ctx) {
   const { config, models, storage, media } = ctx;
 
   const meta = {
+    // Permissions an API key can have (see /developers).
+    apiScopes: require('../apikeys').SCOPES,
     config: {
       siteName: config.siteName,
       donateUrl: config.donateUrl,
