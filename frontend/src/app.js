@@ -681,12 +681,19 @@ ${m.catalog.categories.map((c) => `- [${c.name}](${origin}/browse?category=${c.i
     return sendXml(res, `<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${maps.map(([loc, lastmod]) => `<sitemap><loc>${xmlEsc(loc)}</loc>${lastmod ? `<lastmod>${isoDate(lastmod)}</lastmod>` : ''}</sitemap>`).join('')}</sitemapindex>`);
   });
 
-  // Home, browse, every category, and the info pages. Login, signup and account pages are noindex, so they're left out.
+  // Home, browse, trending, every category and software page, and the info pages. Login, signup,
+  // upload and account pages are noindex, so they're left out. Listing pages change whenever a
+  // public file does, so they carry the newest public file's date.
   app.get('/sitemaps/pages.xml', async (req, res) => {
     const origin = siteOrigin(req);
-    const m = await getMeta(req);
-    const paths = ['/', '/browse', ...m.catalog.categories.map((c) => `/browse?category=${encodeURIComponent(c.id)}`), ...STATIC_PAGES.map((p) => `/${p}`), '/developers/api', '/developers/mcp'];
-    return sendXml(res, `<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${paths.map((p) => urlEntry(origin + p)).join('')}</urlset>`);
+    const [m, r] = await Promise.all([getMeta(req), req.api('GET', '/api/sitemap')]);
+    const fresh = r.status === 200 ? r.data.assets.lastmod : null;
+    const listings = ['/', '/browse', '/browse?sort=trending',
+      ...m.catalog.categories.map((c) => `/browse?category=${encodeURIComponent(c.id)}`),
+      ...m.catalog.software.map((s) => `/browse?software=${encodeURIComponent(s.id)}`)];
+    const docs = [...STATIC_PAGES.map((p) => `/${p}`), '/developers/api', '/developers/mcp'];
+    const entries = [...listings.map((p) => urlEntry(origin + p, fresh)), ...docs.map((p) => urlEntry(origin + p))];
+    return sendXml(res, `<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${entries.join('')}</urlset>`);
   });
 
   const sitemapPageParam = (req) => {

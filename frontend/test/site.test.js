@@ -328,7 +328,21 @@ test('sitemaps list pages, every public asset and every account', opts, async ()
   const pages = (await anon.get('/sitemaps/pages.xml')).text_;
   assert.match(pages, /\/browse\?category=overlays<\/loc>/);
   assert.match(pages, /\/licenses<\/loc>/);
-  assert.doesNotMatch(pages, /\/login|\/signup/);
+  assert.match(pages, /\/browse\?category=software<\/loc>/);
+  assert.match(pages, /\/browse\?software=ae<\/loc>/);
+  assert.match(pages, /\/browse\?sort=trending<\/loc>/);
+  assert.match(pages, /\/developers\/mcp<\/loc>/);
+  assert.match(pages, /\/browse<\/loc><lastmod>\d{4}-/);
+  assert.doesNotMatch(pages, /\/login|\/signup|\/upload|\/settings|\/oauth/);
+  // Every listed page loads, is indexable and is its own canonical URL.
+  for (const loc of [...pages.matchAll(/<loc>([^<]+)<\/loc>/g)].map((x) => x[1].replace(/&amp;/g, '&'))) {
+    const r = await anon.get(new URL(loc).pathname + new URL(loc).search);
+    assert.equal(r.status, 200, loc);
+    assert.doesNotMatch(r.text_, /name="robots" content="noindex"/, loc);
+    const canonical = /<link rel="canonical" href="([^"]+)"/.exec(r.text_);
+    assert.ok(canonical, `canonical on ${loc}`);
+    assert.equal(new URL(canonical[1].replace(/&amp;/g, '&')).pathname + new URL(canonical[1].replace(/&amp;/g, '&')).search, new URL(loc).pathname + new URL(loc).search, loc);
+  }
 
   const assets = (await anon.get('/sitemaps/assets-1.xml')).text_;
   assert.ok(assets.includes(`/a/${pub.slug}</loc>`), 'public asset listed');
