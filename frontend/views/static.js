@@ -153,6 +153,8 @@ const PAGES = {
     body: (c, stats, cat, origin) => {
       const ep = (method, path, text) => html`<div class="endpoint"><p><span class="method">${method}</span><code>${path}</code></p><p>${text}</p></div>`;
       return html`
+      <h2>MCP server for AI agents</h2>
+      <p>Connect Claude, ChatGPT, Cursor, VS Code and other agents to <code>${origin}/mcp</code>. Search and downloads work without a key; add an API key to let the agent upload and manage your files. <a href="/developers/mcp">Setup guide</a>.</p>
       <h2>Your account from code</h2>
       <p>Create a personal <a href="/developers/api">API key</a> to upload, edit and delete your files, manage saved files and your profile from scripts, apps and AI agents. Each key has its own permissions and expiry.</p>
       <h2>For AI assistants and crawlers</h2>

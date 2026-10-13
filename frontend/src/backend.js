@@ -46,6 +46,29 @@ function createBackend(config, { log = console } = {}) {
     return { status: r.status, data: data || { ok: r.ok }, setCookies: r.headers.getSetCookie(), location: r.headers.get('location') };
   }
 
+  // Call made for an MCP client: never the visitor's cookies, only the API key they sent (if any).
+  // Keyless writes get a throwaway double-submit token, like any anonymous visitor would have.
+  async function callAs(req, method, path, body, token, extraHeaders = {}) {
+    const headers = { ...commonHeaders(req), accept: 'application/json', ...extraHeaders };
+    if (token) headers.authorization = `Bearer ${token}`;
+    else if (method !== 'GET') {
+      const csrf = require('node:crypto').randomBytes(24).toString('base64url');
+      headers.cookie = `csrf=${csrf}`;
+      headers['x-csrf-token'] = csrf;
+    }
+    if (body !== undefined) headers['content-type'] = 'application/json';
+    let r;
+    try {
+      r = await fetch(base + path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body), redirect: 'manual' });
+    } catch (err) {
+      log.error(`[mcp] ${method} ${path} failed: ${err.message}`);
+      return { status: 503, data: { ok: false, error: 'ClipFX is unavailable right now. Try again in a minute.' } };
+    }
+    let data = null;
+    try { data = await r.json(); } catch { data = null; }
+    return { status: r.status, data: data || { ok: r.ok }, location: r.headers.get('location') };
+  }
+
   // Passes Set-Cookie headers (login, logout) from the API through to the browser.
   const passCookies = (res, result) => { for (const c of result.setCookies || []) res.append('Set-Cookie', c); };
 
@@ -73,7 +96,7 @@ function createBackend(config, { log = console } = {}) {
     return Readable.fromWeb(r.body).on('error', () => res.destroy()).pipe(res);
   }
 
-  return { call, proxy, passCookies, clientIp };
+  return { call, callAs, proxy, passCookies, clientIp, base };
 }
 
 module.exports = { createBackend, clientIp };

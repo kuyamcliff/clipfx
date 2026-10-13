@@ -501,3 +501,98 @@ test('API key docs list every permission and the upload steps', opts, async () =
   assert.match((await browser().get('/developers')).text_, /href="\/developers\/api"/);
   assert.match((await browser().get('/llms.txt')).text_, /developers\/api/);
 });
+
+test('MCP: handshake, tools, public search, and account tools with an API key', opts, async () => {
+  let id = 0;
+  const rpc = async (method, params, token, extra = {}) => {
+    const headers = { 'content-type': 'application/json', accept: 'application/json, text/event-stream', ...extra };
+    if (token) headers.authorization = `Bearer ${token}`;
+    const res = await fetch(`${site.base}/mcp`, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: ++id, method, params }) });
+    return { status: res.status, body: await res.json(), headers: res.headers };
+  };
+  const tool = async (name, args, token) => (await rpc('tools/call', { name, arguments: args }, token)).body.result;
+
+  const init = await rpc('initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'test', version: '1' } });
+  assert.equal(init.status, 200);
+  assert.equal(init.body.result.protocolVersion, '2025-06-18');
+  assert.equal(init.body.result.serverInfo.name, 'clipfx');
+  assert.ok(init.body.result.capabilities.tools);
+  assert.equal(init.headers.get('access-control-allow-origin'), '*');
+  assert.equal(init.headers.get('set-cookie'), null, 'no cookies on /mcp');
+  assert.equal((await rpc('initialize', { protocolVersion: '1999-01-01' })).body.result.protocolVersion, '2025-11-25');
+
+  // Notifications get 202 and no body.
+  const note = await fetch(`${site.base}/mcp`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }) });
+  assert.equal(note.status, 202);
+
+  const { tools } = (await rpc('tools/list')).body.result;
+  for (const n of ['search_files', 'get_file', 'get_download_link', 'list_categories', 'whoami', 'list_my_files', 'upload_small_file', 'publish_file', 'edit_file', 'delete_file', 'toggle_save', 'update_profile']) {
+    assert.ok(tools.some((t) => t.name === n), n);
+  }
+  assert.ok(tools.every((t) => t.inputSchema.type === 'object' && t.description));
+  assert.equal(tools.find((t) => t.name === 'delete_file').annotations.destructiveHint, true);
+
+  // Public tools work without a key; account tools explain how to get one.
+  const cats = await tool('list_categories', {});
+  assert.equal(cats.isError, false);
+  assert.ok(cats.structuredContent.categories.some((c) => c.id === 'software'));
+  const nokey = await tool('list_my_files', {});
+  assert.equal(nokey.isError, true);
+  assert.match(nokey.content[0].text, /settings\/api-keys/);
+
+  // A key (made through settings) unlocks the account tools.
+  const b = browser();
+  await b.signup('agentowner');
+  const page = await b.post('/settings/api-keys', { form: { name: 'Agent', expires: '30', full: 'on' } });
+  const token = /(cfx_[\w-]{40})/.exec(page.text_)[1];
+  assert.equal((await tool('whoami', {}, token)).structuredContent.username, 'agentowner');
+
+  const up = await tool('upload_small_file', { file_name: 'agent-pack.zip', content_base64: Buffer.from('PK agent made this').toString('base64') }, token);
+  assert.equal(up.isError, false, up.content[0].text);
+  const noRights = await tool('publish_file', { upload_id: up.structuredContent.upload_id, title: 'Agent Pack', category: 'other', license: 'cc0', confirm_rights: false }, token);
+  assert.equal(noRights.isError, true);
+  const pub = await tool('publish_file', { upload_id: up.structuredContent.upload_id, title: 'Agent Pack', category: 'other', license: 'cc0', tags: ['agent'], confirm_rights: true }, token);
+  assert.equal(pub.isError, false, pub.content[0].text);
+  const { slug } = pub.structuredContent;
+
+  const found = await tool('search_files', { query: 'Agent Pack' });
+  assert.ok(found.structuredContent.items.some((x) => x.slug === slug));
+  let edited = await tool('edit_file', { slug, visibility: 'unlisted', max_downloads: 50 }, token);
+  assert.equal(edited.isError, false, edited.content[0].text);
+  edited = await tool('edit_file', { slug, title: 'Agent Pack v2' }, token);
+  assert.equal(edited.isError, false, edited.content[0].text);
+  const mine = await tool('get_file', { slug }, token);
+  assert.equal(mine.structuredContent.title, 'Agent Pack v2');
+  assert.equal(mine.structuredContent.visibility, 'unlisted');
+  assert.equal(mine.structuredContent.max_downloads, 50, 'untouched settings are kept');
+  assert.deepEqual(mine.structuredContent.tags, ['agent']);
+  assert.match((await tool('get_download_link', { slug }, token)).structuredContent.url, /^https?:\/\//);
+
+  assert.equal((await tool('toggle_save', { slug }, token)).structuredContent.saved, true);
+  assert.equal((await tool('update_profile', { bio: 'Made by an agent' }, token)).isError, false);
+  assert.equal((await tool('whoami', {}, token)).structuredContent.bio, 'Made by an agent');
+
+  assert.equal((await tool('delete_file', { slug }, token)).isError, false);
+  assert.equal((await tool('get_file', { slug })).isError, true);
+
+  // A bad key is reported clearly; unknown tools are JSON-RPC errors.
+  assert.match((await tool('whoami', {}, 'cfx_not-a-real-key-aaaaaaaaaaaaaaaaaaaaa')).content[0].text, /invalid, expired or revoked/);
+  assert.equal((await rpc('tools/call', { name: 'nope', arguments: {} })).body.error.code, -32602);
+  assert.equal((await rpc('does/not/exist')).body.error.code, -32601);
+
+  // Browsers opening /mcp get the setup guide.
+  const get = await fetch(`${site.base}/mcp`, { headers: { accept: 'text/html' }, redirect: 'manual' });
+  assert.equal(get.status, 302);
+  assert.equal(get.headers.get('location'), '/developers/mcp');
+  assert.equal((await fetch(`${site.base}/mcp`)).status, 405);
+});
+
+test('MCP setup guide: linked, lists every tool, client configs use the real URL', opts, async () => {
+  const page = await browser().get('/developers/mcp');
+  assert.equal(page.status, 200);
+  const { TOOLS } = require('../src/mcp');
+  for (const t of TOOLS) assert.match(page.text_, new RegExp(`<code>${t.name}</code>`), t.name);
+  assert.match(page.text_, new RegExp(`claude mcp add --transport http clipfx ${site.base}/mcp`));
+  assert.match((await browser().get('/developers')).text_, /href="\/developers\/mcp"/);
+  assert.match((await browser().get('/llms.txt')).text_, /\/mcp : MCP server/);
+});
