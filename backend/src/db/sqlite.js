@@ -139,6 +139,20 @@ CREATE TABLE IF NOT EXISTS oauth_accounts (
 );
 CREATE INDEX IF NOT EXISTS oauth_accounts_user ON oauth_accounts(user_id);
 
+-- Personal API keys. Only a hash of the key is stored; the key itself is shown once.
+CREATE TABLE IF NOT EXISTS api_keys (
+  id TEXT PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  prefix TEXT NOT NULL,
+  token_hash TEXT NOT NULL UNIQUE,
+  scopes TEXT NOT NULL,
+  expires_at INTEGER,
+  last_used_at INTEGER,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS api_keys_user ON api_keys(user_id);
+
 -- Files removed for copyright / abuse can't simply be uploaded again.
 CREATE TABLE IF NOT EXISTS blocked_hashes (
   sha256 TEXT PRIMARY KEY,

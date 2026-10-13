@@ -6,4 +6,5 @@ module.exports = {
   ...require('./account'),
   ...require('./admin'),
   ...require('./static'),
+  ...require('./apidocs'),
 };

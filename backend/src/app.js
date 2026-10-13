@@ -8,6 +8,7 @@ const { createModels } = require('./models');
 const { createStorage } = require('./storage');
 const { createMedia } = require('./media');
 const { parseCookies, safeEqual, createLimiter, createSeenCache } = require('./security');
+const apiKeys = require('./apikeys');
 
 const UPLOAD_TTL = 24 * 3600 * 1000;
 
@@ -85,13 +86,31 @@ async function createApp(config, { log = console } = {}) {
     const trusted = config.internalSecret && safeEqual(req.get('x-internal-secret'), config.internalSecret);
     req.clientIp = (trusted && req.get('x-client-ip')) || req.ip;
     req.cookies = parseCookies(req.headers.cookie);
+    res.ok = (data = {}, status = 200) => res.status(status).json({ ok: true, ...data });
+    res.fail = (status, error, errors) => res.status(status).json({ ok: false, error, ...(errors ? { errors } : {}) });
+    // An API key replaces the session entirely: cookies are ignored when one is sent.
+    const token = apiKeys.tokenFrom(req);
+    if (token !== null) {
+      const found = await models.apiKeys.resolve(token);
+      if (!found || found.user.banned) {
+        res.setHeader('WWW-Authenticate', 'Bearer realm="clipfx"');
+        return res.fail(401, 'That API key is invalid, expired or revoked.');
+      }
+      req.user = found.user;
+      req.apiKey = found.key;
+      req.cookies = {};
+      // Last-used time, written at most once a minute per key.
+      if (!found.key.lastUsed || Date.now() - Number(found.key.lastUsed) > 60000) models.apiKeys.touch(found.key.id).catch(() => {});
+      return next();
+    }
     const user = await models.sessions.user(req.cookies.sid);
     req.user = user && !user.banned ? user : null;
     if (req.cookies.sid && !req.user) res.clearCookie('sid', cookieBase);
-    res.ok = (data = {}, status = 200) => res.status(status).json({ ok: true, ...data });
-    res.fail = (status, error, errors) => res.status(status).json({ ok: false, error, ...(errors ? { errors } : {}) });
-    next();
+    return next();
   });
+
+  // What a key may do: checked against its scopes before any route runs.
+  app.use(apiKeys.authorize);
 
   // Local storage only: the stand-in for R2's presigned URLs. Mounted before the JSON parser
   // because uploads arrive as raw bodies.
@@ -103,6 +122,12 @@ async function createApp(config, { log = console } = {}) {
   // Writes must also come from an allowed origin, and must be JSON (HTML forms can't send that cross-site).
   app.use(async (req, res, next) => {
     if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return next();
+    // Keys aren't sent automatically by browsers the way cookies are, so CSRF doesn't apply to them.
+    if (req.apiKey) {
+      if (!req.is('application/json') && Number(req.get('content-length') || 0) > 0) return res.fail(415, 'Send JSON.');
+      req.body = req.body || {};
+      return next();
+    }
     const origin = req.get('origin');
     if (origin && origin !== 'null') {
       let host = null;
@@ -123,6 +148,7 @@ async function createApp(config, { log = console } = {}) {
   require('./routes/assets')(app, ctx);
   require('./routes/users')(app, ctx);
   require('./routes/admin')(app, ctx);
+  apiKeys.routes(app, ctx);
 
   app.use(async (req, res) => res.fail(404, 'Not found.'));
 

@@ -3,7 +3,8 @@
 // the browser's own /api requests (so cookies stay first-party on this domain).
 const { Readable } = require('node:stream');
 
-const FORWARD_REQUEST_HEADERS = ['accept', 'content-type', 'content-length', 'x-csrf-token', 'origin', 'range', 'user-agent', 'if-none-match', 'if-modified-since'];
+// authorization / x-api-key / x-unlock-token: API keys used by scripts and apps (see /developers/api).
+const FORWARD_REQUEST_HEADERS = ['accept', 'content-type', 'content-length', 'x-csrf-token', 'origin', 'range', 'user-agent', 'if-none-match', 'if-modified-since', 'authorization', 'x-api-key', 'x-unlock-token'];
 // No content-length/content-encoding: fetch() has already decompressed the body, so the
 // upstream length would be wrong and truncate the response.
 const FORWARD_RESPONSE_HEADERS = ['content-type', 'content-range', 'content-disposition', 'accept-ranges', 'cache-control', 'etag', 'last-modified', 'location', 'retry-after', 'x-robots-tag', 'content-security-policy'];

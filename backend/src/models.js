@@ -222,6 +222,32 @@ function createModels(db, { storage }) {
     unlink: (provider, userId) => run('DELETE FROM oauth_accounts WHERE provider = ? AND user_id = ?', provider, userId),
   };
 
+  // Personal API keys: "cfx_" + 40 random characters. Stored as a SHA-256 hash, like sessions.
+  const apiKeys = {
+    async create(userId, { name, scopes, expiresAt }) {
+      const token = `cfx_${crypto.randomBytes(30).toString('base64url')}`;
+      const id = crypto.randomBytes(9).toString('base64url');
+      await run(`INSERT INTO api_keys (id, user_id, name, prefix, token_hash, scopes, expires_at, last_used_at, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?)`, id, userId, name, token.slice(0, 12), sha(token), scopes.join(' '), expiresAt || null, Date.now());
+      return { id, token };
+    },
+    // The key's row and its owner, if the key exists and hasn't expired.
+    async resolve(token) {
+      if (!/^cfx_[\w-]{20,80}$/.test(token)) return null;
+      const row = await one(`SELECT k.id AS key_id, k.scopes AS key_scopes, k.last_used_at AS key_last_used, u.*
+        FROM api_keys k JOIN users u ON u.id = k.user_id
+        WHERE k.token_hash = ? AND (k.expires_at IS NULL OR k.expires_at > ?)`, sha(token), Date.now());
+      if (!row) return null;
+      const { key_id: id, key_scopes: scopes, key_last_used: lastUsed, ...user } = row;
+      return { key: { id, scopes: scopes.split(' ').filter(Boolean), lastUsed }, user };
+    },
+    list: (userId) => many(`SELECT id, name, prefix, scopes, expires_at, last_used_at, created_at FROM api_keys
+      WHERE user_id = ? ORDER BY created_at DESC`, userId),
+    count: (userId) => num('SELECT COUNT(*) AS n FROM api_keys WHERE user_id = ?', userId),
+    revoke: (id, userId) => run('DELETE FROM api_keys WHERE id = ? AND user_id = ?', String(id), userId),
+    touch: (id) => run('UPDATE api_keys SET last_used_at = ? WHERE id = ?', Date.now(), id),
+  };
+
   const uploads = {
     create: (v) => run(`INSERT INTO uploads (id, user_id, key, field, file_name, ext, size, content_type, multipart_id, part_size, anon_hash, created_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, v.id, v.userId, v.key, v.field, v.fileName, v.ext, v.size, v.contentType,
@@ -381,7 +407,7 @@ function createModels(db, { storage }) {
     resolveAllFor: (assetId, status, by) => run("UPDATE reports SET status = ?, resolved_at = ?, resolved_by = ? WHERE asset_id = ? AND status = 'open'", status, Date.now(), by, assetId),
   };
 
-  return { db, users, sessions, resets, oauth, uploads, assets, favorites, reports };
+  return { db, users, sessions, resets, oauth, apiKeys, uploads, assets, favorites, reports };
 }
 
 module.exports = { createModels, serialize, buildSearch, randomSlug, isExpired, MEDIA_MIME, extOfKey, PUBLIC_ASSET_SQL };

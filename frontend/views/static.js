@@ -153,6 +153,8 @@ const PAGES = {
     body: (c, stats, cat, origin) => {
       const ep = (method, path, text) => html`<div class="endpoint"><p><span class="method">${method}</span><code>${path}</code></p><p>${text}</p></div>`;
       return html`
+      <h2>Your account from code</h2>
+      <p>Create a personal <a href="/developers/api">API key</a> to upload, edit and delete your files, manage saved files and your profile from scripts, apps and AI agents. Each key has its own permissions and expiry.</p>
       <h2>For AI assistants and crawlers</h2>
       <p>Every public page is crawlable and every AI crawler is welcome (see <a href="/robots.txt">robots.txt</a>). A plain-text summary written for language models lives at <a href="/llms.txt">/llms.txt</a>, and the <a href="/sitemap.xml">sitemap</a> lists every public file and creator.</p>
       <h2>Endpoints</h2>

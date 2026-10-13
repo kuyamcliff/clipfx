@@ -286,7 +286,29 @@
     toast(ok ? 'Copied to clipboard' : 'Couldn\'t copy. Select the text and copy it.', ok ? 'ok' : 'error');
   });
 
-  $$('[data-select-on-focus]').forEach((el) => el.addEventListener('focus', () => el.select()));
+  // Inputs select their value; other elements (a <code> with a key or hash) select their text.
+  $$('[data-select-on-focus]').forEach((el) => el.addEventListener('focus', () => {
+    if (typeof el.select === 'function') { el.select(); return; }
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+  }));
+
+  // API key form: "Full access" ticks every permission; the date picker only shows for "Custom date".
+  const keyForm = $('[data-key-form]');
+  if (keyForm) {
+    const full = $('[data-key-full]', keyForm);
+    const boxes = $$('[data-key-scope]', keyForm);
+    full.addEventListener('change', () => boxes.forEach((b) => { b.checked = full.checked; }));
+    boxes.forEach((b) => b.addEventListener('change', () => { full.checked = boxes.every((x) => x.checked); }));
+    const expires = $('[data-key-expires]', keyForm);
+    const date = $('[data-key-date]', keyForm);
+    const sync = () => { date.hidden = expires.value !== 'custom'; date.required = expires.value === 'custom'; };
+    expires.addEventListener('change', sync);
+    sync();
+  }
 
   // ---- Password visibility -----------------------------------------------------------------------
 
