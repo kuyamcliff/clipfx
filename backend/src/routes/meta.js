@@ -2,6 +2,9 @@
 const catalog = require('../catalog');
 const { MEDIA_MIME, extOfKey } = require('../models');
 const { parseSocials, PLATFORMS } = require('../socials');
+const page = require('../page');
+
+const { parsePage } = page;
 
 // Everything the frontend needs that rarely changes: site settings, limits and the taxonomy.
 module.exports = function metaRoutes(app, ctx) {
@@ -28,7 +31,9 @@ module.exports = function metaRoutes(app, ctx) {
       anonMaxUpload: config.anonMaxUpload,
       socialPlatforms: Object.fromEntries(Object.entries(PLATFORMS).map(([k, v]) => [k, v.label])),
       googleAuth: !!(config.google.clientId && config.google.clientSecret),
-      tiktokAuth: !!(config.tiktok.clientKey && config.tiktok.clientSecret),
+      githubAuth: !!(config.github.clientId && config.github.clientSecret),
+      pagesDomain: config.pagesDomain,
+      pageOptions: { accents: page.ACCENTS, themes: page.THEMES, layouts: page.LAYOUTS, covers: page.COVERS, maxLinks: page.MAX_LINKS, maxFeatured: page.MAX_FEATURED },
     },
     catalog: {
       categories: catalog.CATEGORIES,
@@ -47,10 +52,14 @@ module.exports = function metaRoutes(app, ctx) {
     res.ok(meta);
   });
 
+  // Usernames can hold "_" but hostnames can't, so pages use "-" (usernames never contain "-").
+  ctx.pageHost = (username) => (config.pagesDomain ? `${String(username).replace(/_/g, '-')}.${config.pagesDomain}` : null);
+  const pageHost = ctx.pageHost;
   ctx.avatarUrl = (key) => (key ? storage.urlFor(key, { kind: 'image', contentType: MEDIA_MIME[extOfKey(key)], stable: true }) : null);
   ctx.publicUser = async (u, { self = false } = {}) => u && ({
     id: u.id, username: u.username, display_name: u.display_name, bio: u.bio, website: u.website,
     socials: parseSocials(u.socials), avatar_url: await ctx.avatarUrl(u.avatar_key), anonymous: !!u.is_system,
+    page: parsePage(u.page), page_host: pageHost(u.username),
     role: u.role, banned: !!u.banned, created_at: u.created_at, ...(self ? { email: u.email || '', has_password: !!u.password_hash } : {}),
   });
 

@@ -3,6 +3,9 @@
 // we store a clean https URL on the platform's own domain, so a profile can't link elsewhere
 // while showing, say, a YouTube icon.
 const PLATFORMS = {
+  github: { label: 'GitHub', hosts: ['github.com'], url: (h) => `https://github.com/${h}` },
+  gitlab: { label: 'GitLab', hosts: ['gitlab.com'], url: (h) => `https://gitlab.com/${h}` },
+  linkedin: { label: 'LinkedIn', hosts: ['linkedin.com'], url: (h) => `https://www.linkedin.com/in/${h}` },
   youtube: { label: 'YouTube', hosts: ['youtube.com', 'youtu.be'], url: (h) => `https://www.youtube.com/@${h}` },
   tiktok: { label: 'TikTok', hosts: ['tiktok.com'], url: (h) => `https://www.tiktok.com/@${h}` },
   instagram: { label: 'Instagram', hosts: ['instagram.com'], url: (h) => `https://www.instagram.com/${h}` },

@@ -166,7 +166,7 @@ test('software uploads: accepted from accounts, published with a SHA-256 to chec
     await new Promise((r) => setTimeout(r, 50));
   }
   assert.equal(a.file_kind, 'software');
-  assert.equal(a.category.id || a.category, 'software');
+  assert.equal(a.category.id || a.category, 'apps'); // the old "software" category maps to Apps & Software
   assert.equal(a.sha256, require('node:crypto').createHash('sha256').update(exe).digest('hex'));
   // Other kinds keep their hash private.
   const vid = await alice.createAsset(baseFields({ title: 'Plain clip' }), { file: fakeVideo });

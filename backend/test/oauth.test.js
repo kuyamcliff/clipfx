@@ -1,5 +1,5 @@
 'use strict';
-// Sign-in with Google and TikTok, against stand-ins for their token and user endpoints.
+// Sign-in with Google and GitHub, against stand-ins for their token and user endpoints.
 const { test, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const http = require('node:http');
@@ -10,7 +10,8 @@ let srv;
 let google;
 let nextClaims = {};
 let lastExchange = null;
-let nextTikTok = {};
+let nextGitHub = {};
+let lastGitHubAuth = null;
 
 const b64 = (o) => Buffer.from(JSON.stringify(o)).toString('base64url');
 const idToken = (claims) => `${b64({ alg: 'RS256' })}.${b64(claims)}.sig`;
@@ -20,15 +21,18 @@ before(async () => {
     let body = '';
     req.on('data', (c) => { body += c; });
     req.on('end', () => {
-      if (req.url.startsWith('/tiktok/user')) {
+      if (req.url.startsWith('/github/api/')) {
+        lastGitHubAuth = req.headers.authorization;
         res.writeHead(200, { 'content-type': 'application/json' });
-        return res.end(JSON.stringify({ data: { user: { open_id: 'ignored', display_name: nextTikTok.name } }, error: { code: 'ok' } }));
+        if (req.url.endsWith('/user/emails')) return res.end(JSON.stringify(nextGitHub.emails || []));
+        return res.end(JSON.stringify({ id: nextGitHub.id, login: nextGitHub.login, name: nextGitHub.name ?? null }));
       }
       lastExchange = Object.fromEntries(new URLSearchParams(body));
-      if (req.url.startsWith('/tiktok/token')) {
+      if (req.url.startsWith('/github/token')) {
         res.writeHead(200, { 'content-type': 'application/json' });
-        if (lastExchange.code === 'bad') return res.end('{"error":"invalid_grant","error_description":"bad code"}');
-        return res.end(JSON.stringify({ access_token: 'act', open_id: nextTikTok.openId, scope: 'user.info.basic' }));
+        // GitHub answers 200 with an error field for bad codes.
+        if (lastExchange.code === 'bad') return res.end('{"error":"bad_verification_code","error_description":"bad code"}');
+        return res.end(JSON.stringify({ access_token: 'gho_test', token_type: 'bearer', scope: 'read:user,user:email' }));
       }
       if (lastExchange.code === 'bad') { res.writeHead(400, { 'content-type': 'application/json' }); return res.end('{"error":"invalid_grant"}'); }
       const claims = { iss: 'https://accounts.google.com', aud: CLIENT_ID, exp: Math.floor(Date.now() / 1000) + 3600, email_verified: true, ...nextClaims };
@@ -39,9 +43,9 @@ before(async () => {
   await new Promise((r) => google.listen(0, '127.0.0.1', r));
   srv = await startServer({
     google: { clientId: CLIENT_ID, clientSecret: 'shh', authUrl: 'https://accounts.google.com/o/oauth2/v2/auth', tokenUrl: `http://127.0.0.1:${google.address().port}/token` },
-    tiktok: {
-      clientKey: 'awtestkey', clientSecret: 'tt-secret', authUrl: 'https://www.tiktok.com/v2/auth/authorize/',
-      tokenUrl: `http://127.0.0.1:${google.address().port}/tiktok/token`, userUrl: `http://127.0.0.1:${google.address().port}/tiktok/user`,
+    github: {
+      clientId: 'Iv1.testgithub', clientSecret: 'gh-secret', authUrl: 'https://github.com/login/oauth/authorize',
+      tokenUrl: `http://127.0.0.1:${google.address().port}/github/token`, apiUrl: `http://127.0.0.1:${google.address().port}/github/api`,
     },
   });
 });
@@ -51,11 +55,11 @@ after(async () => {
   google.close();
 });
 
-async function signInWithTikTok(c, who, code = 'good') {
-  nextTikTok = who;
-  const start = await c.get('/api/auth/tiktok/start');
+async function signInWithGitHub(c, who, code = 'good') {
+  nextGitHub = who;
+  const start = await c.get('/api/auth/github/start');
   assert.equal(start.status, 200);
-  return c.post('/api/auth/tiktok', { code, verifier: start.json_.verifier });
+  return c.post('/api/auth/github', { code, verifier: start.json_.verifier });
 }
 
 async function signInWithGoogle(c, claims, code = 'good') {
@@ -143,7 +147,8 @@ test('without Google settings the endpoints are off', async () => {
   try {
     const c = client(plain.base);
     assert.equal((await c.get('/api/meta')).json_.config.googleAuth, false);
-    assert.equal((await c.get('/api/meta')).json_.config.tiktokAuth, false);
+    assert.equal((await c.get('/api/meta')).json_.config.githubAuth, false);
+    assert.equal((await c.get('/api/auth/github/start')).status, 404);
     assert.equal((await c.get('/api/auth/tiktok/start')).status, 404);
     assert.equal((await c.get('/api/auth/google/start')).status, 404);
   } finally {
@@ -151,52 +156,67 @@ test('without Google settings the endpoints are off', async () => {
   }
 });
 
-test('TikTok: start URL, sign up, sign in again', async () => {
+test('GitHub: start URL, sign up, sign in again, verified primary email only', async () => {
   const c = client(srv.base);
-  assert.equal((await c.get('/api/meta')).json_.config.tiktokAuth, true);
-  const u = new URL((await c.get('/api/auth/tiktok/start')).json_.url);
-  assert.equal(u.host, 'www.tiktok.com');
-  assert.equal(u.searchParams.get('client_key'), 'awtestkey');
-  assert.equal(u.searchParams.get('scope'), 'user.info.basic');
-  assert.equal(u.searchParams.get('redirect_uri'), 'http://frontend.test/auth/tiktok/callback');
+  assert.equal((await c.get('/api/meta')).json_.config.githubAuth, true);
+  const u = new URL((await c.get('/api/auth/github/start')).json_.url);
+  assert.equal(u.host, 'github.com');
+  assert.equal(u.searchParams.get('client_id'), 'Iv1.testgithub');
+  assert.equal(u.searchParams.get('scope'), 'read:user user:email');
+  assert.equal(u.searchParams.get('redirect_uri'), 'http://frontend.test/auth/github/callback');
+  assert.equal(u.searchParams.get('code_challenge_method'), 'S256');
 
-  let res = await signInWithTikTok(c, { openId: 'tt-1', name: 'Mo Edits' });
+  let res = await signInWithGitHub(c, {
+    id: 101, login: 'Mo-Dev', name: 'Mo Dev',
+    emails: [{ email: 'old@example.com', primary: false, verified: true }, { email: 'Mo@Example.com', primary: true, verified: true }],
+  });
   assert.equal(res.status, 201, res.body_.toString());
-  assert.equal(res.json_.user.username, 'mo_edits');
-  assert.equal(res.json_.user.display_name, 'Mo Edits');
-  assert.equal(lastExchange.client_key, 'awtestkey');
-  assert.equal(lastExchange.redirect_uri, 'http://frontend.test/auth/tiktok/callback');
-  res = await signInWithTikTok(client(srv.base), { openId: 'tt-1', name: 'Renamed' });
+  assert.equal(res.json_.user.username, 'mo_dev');
+  assert.equal(res.json_.user.display_name, 'Mo Dev');
+  assert.equal(lastExchange.client_id, 'Iv1.testgithub');
+  assert.equal(lastExchange.client_secret, 'gh-secret');
+  assert.ok(lastExchange.code_verifier);
+  assert.equal(lastExchange.redirect_uri, 'http://frontend.test/auth/github/callback');
+  assert.equal(lastGitHubAuth, 'Bearer gho_test');
+  assert.equal((await c.get('/api/session')).json_.user.email, 'mo@example.com');
+
+  res = await signInWithGitHub(client(srv.base), { id: 101, login: 'renamed' });
   assert.equal(res.status, 200);
-  assert.equal(res.json_.user.username, 'mo_edits');
-  assert.equal((await signInWithTikTok(client(srv.base), { openId: 'tt-x' }, 'bad')).status, 400);
-  // No display name from TikTok still gives a usable username.
-  res = await signInWithTikTok(client(srv.base), { openId: 'tt-2', name: '' });
-  assert.equal(res.json_.user.username, 'tiktok_creator');
+  assert.equal(res.json_.user.username, 'mo_dev');
+  assert.equal((await signInWithGitHub(client(srv.base), { id: 999, login: 'x' }, 'bad')).status, 400);
+
+  // An unverified address is never used, so it can't take over an existing account.
+  await client(srv.base).post('/api/auth/signup', { username: 'victim', email: 'victim@example.com', password: 'correct horse battery', agree: true });
+  res = await signInWithGitHub(client(srv.base), { id: 202, login: 'attacker', emails: [{ email: 'victim@example.com', primary: true, verified: false }] });
+  assert.equal(res.status, 201);
+  assert.equal(res.json_.user.username, 'attacker');
+  // No name and no login hint still gives a usable username.
+  res = await signInWithGitHub(client(srv.base), { id: 303, login: '' });
+  assert.equal(res.json_.user.username, 'maker');
 });
 
 test('connecting and disconnecting sign-in methods from an account', async () => {
   const c = client(srv.base);
   await c.post('/api/auth/signup', { username: 'carla', password: 'correct horse battery', agree: true });
-  let res = await signInWithTikTok(c, { openId: 'tt-carla', name: 'Carla' });
+  let res = await signInWithGitHub(c, { id: 401, login: 'carla-gh', name: 'Carla' });
   assert.equal(res.json_.linked, true);
   res = await signInWithGoogle(c, { sub: 'g-carla', email: 'carla@gmail.com', name: 'Carla' });
   assert.equal(res.json_.linked, true);
-  assert.deepEqual((await c.get('/api/session')).json_.user.connections, ['google', 'tiktok']);
+  assert.deepEqual((await c.get('/api/session')).json_.user.connections, ['github', 'google']);
   // Both now log into carla.
-  assert.equal((await signInWithTikTok(client(srv.base), { openId: 'tt-carla' })).json_.user.username, 'carla');
+  assert.equal((await signInWithGitHub(client(srv.base), { id: 401, login: 'carla-gh' })).json_.user.username, 'carla');
   assert.equal((await signInWithGoogle(client(srv.base), { sub: 'g-carla', email: 'carla@gmail.com' })).json_.user.username, 'carla');
-  // A TikTok account that belongs to someone else can't be taken over.
-  res = await signInWithTikTok(c, { openId: 'tt-1', name: 'Mo Edits' });
+  // A GitHub account that belongs to someone else can't be taken over.
+  res = await signInWithGitHub(c, { id: 101, login: 'Mo-Dev' });
   assert.equal(res.status, 409);
-  res = await c.post('/api/me/connections/tiktok/remove');
+  res = await c.post('/api/me/connections/github/remove');
   assert.equal(res.status, 200);
   assert.deepEqual((await c.get('/api/session')).json_.user.connections, ['google']);
 
   // The last way in can't be removed from a passwordless account.
   const t = client(srv.base);
-  await signInWithTikTok(t, { openId: 'tt-solo', name: 'Solo' });
-  assert.equal((await t.post('/api/me/connections/tiktok/remove')).status, 400);
+  await signInWithGitHub(t, { id: 501, login: 'solo' });
+  assert.equal((await t.post('/api/me/connections/github/remove')).status, 400);
 
   // Logout is not mistaken for a provider.
   assert.equal((await c.post('/api/auth/logout')).status, 200);

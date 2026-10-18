@@ -7,4 +7,5 @@ module.exports = {
   ...require('./admin'),
   ...require('./static'),
   ...require('./apidocs'),
+  ...require('./devpage'),
 };

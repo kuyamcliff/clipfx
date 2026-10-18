@@ -29,7 +29,7 @@ const GOOGLE_G = '<svg class="i" viewBox="0 0 48 48" aria-hidden="true" focusabl
 
 const PROVIDERS = [
   { id: 'google', label: 'Google', mark: () => raw(GOOGLE_G), on: (c) => c.googleAuth },
-  { id: 'tiktok', label: 'TikTok', mark: () => icon('tiktok'), on: (c) => c.tiktokAuth },
+  { id: 'github', label: 'GitHub', mark: () => icon('github'), on: (c) => c.githubAuth },
 ];
 const enabledProviders = (ctx) => PROVIDERS.filter((p) => p.on(ctx.config));
 

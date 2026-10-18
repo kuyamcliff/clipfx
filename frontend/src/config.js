@@ -8,10 +8,11 @@ function bool(value, fallback) {
   return /^(1|true|yes|on)$/i.test(String(value));
 }
 
-// Added to CSS and JS URLs so caches (the browser, Cloudflare, Vercel) never serve old files
-// with new pages. On Vercel it's the deployed commit; locally, a hash of the files.
+// Added to CSS and JS URLs so caches (the browser, Cloudflare) never serve old files with new
+// pages. On Cloudflare it's written at build time (scripts/build.js); locally, a hash of the files.
 function assetVersion(env) {
-  if (env.VERCEL_GIT_COMMIT_SHA) return env.VERCEL_GIT_COMMIT_SHA.slice(0, 12);
+  if (env.ASSET_VERSION) return env.ASSET_VERSION;
+  try { return require('./asset-version.json').version; } catch { /* not built: hash the files */ }
   try {
     const hash = crypto.createHash('sha256');
     for (const f of ['css/style.css', 'js/app.js']) hash.update(fs.readFileSync(path.join(__dirname, '..', 'public', 'static', f)));
@@ -23,7 +24,7 @@ function assetVersion(env) {
 
 function loadConfig(overrides = {}) {
   const env = process.env;
-  const production = env.NODE_ENV === 'production' || !!env.VERCEL;
+  const production = env.NODE_ENV === 'production';
   return {
     production,
     port: Number(env.PORT) || 3000,
@@ -33,6 +34,8 @@ function loadConfig(overrides = {}) {
     // Optional: this site's public address. Otherwise taken from the request.
     publicUrl: (env.PUBLIC_URL || '').replace(/\/+$/, ''),
     internalSecret: env.INTERNAL_SECRET || '',
+    // Developer pages are served on <username>.PAGES_DOMAIN (e.g. clipfx.me). Empty = off.
+    pagesDomain: (env.PAGES_DOMAIN || '').toLowerCase(),
     cookieSecure: bool(env.COOKIE_SECURE, production),
     logRequests: bool(env.LOG_REQUESTS, !production),
     assetVersion: assetVersion(env),

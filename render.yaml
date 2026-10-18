@@ -6,11 +6,11 @@ services:
     runtime: docker
     dockerfilePath: ./backend/Dockerfile
     dockerContext: ./backend
-    # The database is Postgres (DATABASE_URL, e.g. Supabase) and files live in R2, so no disk is needed.
+    # The database is Cloudflare D1 (through the clipfx-db Worker) and files live in R2, so no disk is needed.
     # Free instances work but sleep when idle; "starter" stays awake.
     plan: free
-    # Keep this close to your Vercel functions' region (Vercel's default is iad1, Washington D.C.).
-    region: virginia
+    # Close to the D1 database (created in western North America).
+    region: oregon
     healthCheckPath: /healthz
     autoDeploy: true
     buildFilter:
@@ -25,13 +25,18 @@ services:
         value: "1"
       - key: STORAGE
         value: r2
-      # Supabase → Database → Connection string → Session pooler (port 5432).
-      - key: DATABASE_URL
+      # Cloudflare D1 through the clipfx-db Worker (workers/db): its URL and the DB_SECRET it was given.
+      - key: D1_URL
         sync: false
-      # Your Vercel site, e.g. https://clipfx.vercel.app (used for share links and the origin check).
+      - key: D1_SECRET
+        sync: false
+      # The website, e.g. https://www.clipfx.me (used for share links and the origin check).
       - key: BASE_URL
         sync: false
-      # Any long random string. Must be identical in Vercel's INTERNAL_SECRET.
+      # Developer pages live on <username>.PAGES_DOMAIN.
+      - key: PAGES_DOMAIN
+        value: clipfx.me
+      # Any long random string. Must be identical to the website Worker's INTERNAL_SECRET.
       - key: INTERNAL_SECRET
         sync: false
       - key: R2_ACCOUNT_ID
@@ -42,7 +47,10 @@ services:
         sync: false
       - key: R2_BUCKET
         sync: false
-      - key: DONATE_URL
+      # "Continue with GitHub": OAuth App with callback BASE_URL + /auth/github/callback.
+      - key: GITHUB_CLIENT_ID
+        sync: false
+      - key: GITHUB_CLIENT_SECRET
         sync: false
       - key: CONTACT_EMAIL
         sync: false
