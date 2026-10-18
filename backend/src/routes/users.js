@@ -23,7 +23,7 @@ module.exports = function userRoutes(app, ctx) {
 
   app.get('/api/users/:username', async (req, res) => {
     const profile = await models.users.byUsername(req.params.username);
-    if (!profile || profile.is_system || (profile.banned && !ctx.isAdmin(req))) return res.fail(404, 'There’s no creator with that username.');
+    if (!profile || profile.is_system || (profile.banned && !ctx.isAdmin(req))) return res.fail(404, 'There’s no developer with that username.');
     const sort = ctx.SORTS[req.query.sort] ? req.query.sort : 'new';
     res.ok({
       profile: await ctx.publicUser(profile),

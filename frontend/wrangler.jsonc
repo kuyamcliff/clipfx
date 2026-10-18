@@ -1,0 +1,26 @@
+{
+  // The ClipFX website on Cloudflare Workers. Deploy from the repo root: npm run deploy:web
+  // Secrets (npx wrangler secret put NAME -c frontend/wrangler.jsonc):
+  //   INTERNAL_SECRET  same value as on the API (Render)
+  //   ANALYTICS_TOKEN  Cloudflare API token with "Account Analytics: Read" (dashboard charts)
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "clipfx-web",
+  "main": "worker.js",
+  "compatibility_date": "2026-10-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "build": { "command": "node scripts/build.js", "cwd": "." },
+  "assets": { "directory": "public", "binding": "ASSETS" },
+  "workers_dev": true,
+  "preview_urls": false,
+  // Run near the API on Render (Oregon): every page makes a few calls to it.
+  "placement": { "mode": "smart" },
+  "observability": { "enabled": true },
+  "vars": {
+    "NODE_ENV": "production",
+    "BACKEND_URL": "https://clipfx-1x49.onrender.com",
+    "PUBLIC_URL": "https://www.clipfx.me",
+    "CF_ACCOUNT_ID": "77d44239338105659a28e17c79b16d7e"
+  },
+  "analytics_engine_datasets": [{ "binding": "ANALYTICS", "dataset": "clipfx_events" }],
+  "triggers": { "crons": ["*/10 * * * *"] }
+}

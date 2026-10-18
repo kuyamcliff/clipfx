@@ -46,12 +46,12 @@ const TOOLS = [
   // Library: any signed-in account.
   {
     name: 'search_files', title: 'Search files', scope: null, annotations: READ,
-    description: 'Search the ClipFX library of free video editing resources: stock footage, transitions, LUTs, overlays, templates, presets, sound effects, music, textures, 3D assets and software. Returns 24 results per page.',
+    description: 'Search products published on ClipFX: apps, developer tools, plugins and extensions, libraries, templates, scripts, AI models, games, design and media assets. Returns 24 results per page.',
     inputSchema: obj({
-      query: str('Words to search for, e.g. "film grain" or "whoosh".'),
+      query: str('Words to search for, e.g. "markdown editor" or "vs code theme".'),
       category: str('Only this category id (see list_categories).'),
-      software: str('Only files that work with this software id, e.g. "ae".'),
-      license: str('Only this license id, e.g. "cc0".'),
+      software: str('Only products for this platform id, e.g. "windows", "macos", "linux" or "vscode".'),
+      license: str('Only this license id, e.g. "mit" or "cc0".'),
       kind: str('Only this file kind: video, audio, image, lut, project, preset, model, font, archive, document or software.'),
       sort: str('"new" (default), "trending" or "downloads".', { enum: ['new', 'trending', 'downloads'] }),
       page: int('Page number, from 1.', { minimum: 1 }),
@@ -396,7 +396,7 @@ function createMcp({ backend, config, log = console }) {
           protocolVersion: PROTOCOL_VERSIONS.includes(asked) ? asked : PROTOCOL_VERSIONS[0],
           capabilities: { tools: { listChanged: false } },
           serverInfo: { name: 'clipfx', title: 'ClipFX', version: SERVER_VERSION, websiteUrl: ctx.origin },
-          instructions: `ClipFX (${ctx.origin}) is a free, nonprofit library of video editing resources, and you are signed in to the user's ClipFX account. Use search_files and get_file to find assets and get_download_link to fetch them; always respect each file's license. You can also manage the user's own files (upload_small_file or start_upload, then publish_file), saved files and profile, within the permissions they approved. Confirm with the user before publishing, deleting or reporting.`,
+          instructions: `ClipFX (${ctx.origin}) is a platform where developers publish and distribute their products (apps, tools, plugins, libraries, templates and assets), each with their own page at <username>.clipfx.me. You are signed in to the user's ClipFX account. Use search_files and get_file to find products and get_download_link to fetch them; always respect each product's license. You can also publish and manage the user's own products (upload_small_file or start_upload, then publish_file), saved files and profile, within the permissions they approved. Confirm with the user before publishing, deleting or reporting.`,
         });
       }
       case 'ping': return reply({});

@@ -5,14 +5,14 @@ const {
   icon, hue, categoryPhoto, avatar, assetGrid, pagination, emptyState, meter, pageHref, sectionHead, media, shareFlags,
 } = require('./components');
 
-const SUGGESTIONS = ['light leak', 'whoosh', 'film grain', 'lower third', 'glitch', 'LUT'];
+const SUGGESTIONS = ['cli', 'vs code extension', 'starter kit', 'ai model', 'icons', 'desktop app'];
 
 function categoryGrid(categories) {
   return html`<div class="cats">
     ${categories.map((c, n) => html`<a class="cat" href="/browse?category=${c.id}" ${hue(c)}>
       <img class="cat-img" src="${categoryPhoto(c)}" alt="" width="640" height="400" loading="lazy" decoding="async">
       <span class="cat-num mono">${String(n + 1).padStart(2, '0')}</span>
-      <span class="cat-text"><span class="cat-name">${c.name}</span><span class="cat-count">${formatCount(c.count)} ${c.count === 1 ? 'file' : 'files'}</span></span>
+      <span class="cat-text"><span class="cat-name">${c.name}</span><span class="cat-count">${formatCount(c.count)} ${c.count === 1 ? 'product' : 'products'}</span></span>
     </a>`)}
   </div>`;
 }
@@ -22,15 +22,15 @@ function creatorCard(c) {
     ${avatar(c, 'lg')}
     <span class="creator-name">${c.display_name}</span>
     <span class="creator-handle">@${c.username}</span>
-    <span class="creator-stats"><span>${formatCount(c.uploads)} uploads</span><span>${formatCount(c.downloads)} downloads</span></span>
+    <span class="creator-stats"><span>${formatCount(c.uploads)} products</span><span>${formatCount(c.downloads)} downloads</span></span>
   </a>`;
 }
 
 const FEATURES = [
-  ['download', 'Free downloads', 'Download anything without an account. No paywalls, no ads.'],
-  ['ghost', 'Upload anonymously', 'Share a file without signing up. You get a private link to manage it.'],
-  ['clock', 'Expiring links', 'Make a link stop working after a few minutes, days, or a set number of downloads.'],
-  ['lock', 'Password protection', 'Lock a file so only people with the password can download it.'],
+  ['globe', 'Your own page', 'yourname.clipfx.me with your products, links and story. Pick the colors, layout and featured releases.'],
+  ['link', 'Direct product links', 'Every product gets a short link on your page. Put it in a README, a release note or a tweet.'],
+  ['trending', 'Analytics', 'Page views, product views, downloads, referrers, countries and devices, without tracking anyone.'],
+  ['code', 'API keys & MCP', 'Publish from CI, scripts or AI agents. Scoped keys, OAuth for MCP clients, and a JSON API.'],
 ];
 
 function home(ctx, { stats, categories, fresh, trending, creators }) {
@@ -38,21 +38,28 @@ function home(ctx, { stats, categories, fresh, trending, creators }) {
   <section class="hero">
     <div class="container hero-in">
       <div class="hero-copy">
-        <p class="hero-meta mono">${formatCount(stats.assets)} files &middot; ${categories.length} categories &middot; free</p>
-        <h1 class="hero-title">Find all resources for video editing.</h1>
-        <p class="hero-sub">Stock footage, transitions, LUTs, overlays, templates, sound effects and music. Shared by editors, free to download, no account needed.</p>
+        <p class="hero-meta mono">${formatCount(stats.assets)} products &middot; ${formatCount(stats.creators || 0)} developers &middot; free</p>
+        <h1 class="hero-title">Ship it. Share one link. See who downloads.</h1>
+        <p class="hero-sub">Publish apps, plugins, libraries, templates and assets. Get your own page at yourname.${ctx.config.pagesDomain || 'clipfx.me'}, direct download links and analytics, with an API and MCP server for automation.</p>
         <form class="hero-search" action="/browse" role="search">
           ${icon('search')}
-          <input type="search" name="q" placeholder="Search footage, LUTs, sounds" aria-label="Search resources" autocomplete="off">
+          <input type="search" name="q" placeholder="Search apps, tools, plugins" aria-label="Search products" autocomplete="off">
           <button class="btn btn-primary" type="submit">Search</button>
         </form>
         <p class="hero-popular"><span class="mono">Popular</span> ${SUGGESTIONS.map((s, n) => html`${n ? ', ' : ''}<a href="/browse?q=${encodeURIComponent(s)}">${s}</a>`)}</p>
       </div>
-      <figure class="monitor" aria-hidden="true">
-        <img src="/static/img/hero.webp" alt="" width="1920" height="1080" fetchpriority="high" decoding="async">
-        <span class="monitor-safe"></span>
-        <span class="monitor-tc mono" data-timecode>00:00:12:04</span>
-        <span class="monitor-tag mono">A001_C004 &middot; 4K &middot; 23.976</span>
+      <figure class="hero-mock" aria-hidden="true">
+        <div class="mock-bar"><span></span><span></span><span></span><p class="mock-url mono">jane.${ctx.config.pagesDomain || 'clipfx.me'}</p></div>
+        <div class="mock-body">
+          <div class="mock-banner"></div>
+          <div class="mock-head"><span class="mock-avatar"></span><div><p class="mock-name">Jane Doe</p><p class="mock-line">Fast, tiny tools for developers</p></div><span class="mock-cta">Star on GitHub</span></div>
+          <div class="mock-grid">
+            <div class="mock-card"><span class="mock-thumb"></span><p>tinycli</p><small>12.4k downloads</small></div>
+            <div class="mock-card"><span class="mock-thumb t2"></span><p>Theme Kit</p><small>3.1k downloads</small></div>
+            <div class="mock-card"><span class="mock-thumb t3"></span><p>VS Code ext.</p><small>8.9k downloads</small></div>
+          </div>
+          <div class="mock-chart">${Array.from({ length: 14 }, (_, i) => html`<span style="--h:${[30, 42, 38, 55, 48, 62, 58, 70, 66, 78, 74, 88, 84, 96][i]}%"></span>`)}</div>
+        </div>
       </figure>
     </div>
   </section>
@@ -69,13 +76,13 @@ function home(ctx, { stats, categories, fresh, trending, creators }) {
     </section>` : ''}
 
     <section class="section">
-      ${sectionHead('Just uploaded', ['/browse', 'See all'])}
-      ${fresh.length ? assetGrid(fresh) : emptyState('Nothing here yet', 'Be the first to share something. You don\'t even need an account.',
-    html`<a class="btn btn-primary" href="/upload">${icon('upload')}<span>Upload a file</span></a>`, 'upload')}
+      ${sectionHead('Just published', ['/browse', 'See all'])}
+      ${fresh.length ? assetGrid(fresh) : emptyState('Nothing here yet', 'Be the first to publish something.',
+    html`<a class="btn btn-primary" href="/upload">${icon('upload')}<span>Publish a product</span></a>`, 'upload')}
     </section>
 
     ${creators && creators.length ? html`<section class="section">
-      ${sectionHead('Creators', null)}
+      ${sectionHead('Developers', null)}
       <div class="creators">${creators.map(creatorCard)}</div>
     </section>` : ''}
 
@@ -87,12 +94,12 @@ function home(ctx, { stats, categories, fresh, trending, creators }) {
     <section class="cta">
       <img class="cta-img" src="/static/img/cta.webp" alt="" width="1280" height="560" loading="lazy" decoding="async">
       <div>
-        <h2>Made something useful?</h2>
-        <p>A LUT that nailed a look, a pack of whooshes, a title template. Upload it, pick a license and share one link.</p>
+        <h2>Built something worth sharing?</h2>
+        <p>A CLI, an extension, a starter kit, a model. Publish it, pick a license, and get a page and a link you can share anywhere.</p>
       </div>
       <div class="cta-actions">
-        <a class="btn btn-primary btn-lg" href="/upload">${icon('upload')}<span>Upload a file</span></a>
-        ${ctx.user ? '' : html`<a class="btn btn-secondary btn-lg" href="/signup">Create an account</a>`}
+        <a class="btn btn-primary btn-lg" href="/upload">${icon('upload')}<span>Publish a product</span></a>
+        ${ctx.user ? '' : html`<a class="btn btn-secondary btn-lg" href="/signup">Claim your page</a>`}
       </div>
     </section>
   </div>`;
@@ -255,7 +262,7 @@ function profile(ctx, { profile: p, stats, result, sort, sorts }) {
     </section>
   </div>`;
   return layout(ctx, {
-    title: `${p.display_name} (@${p.username})`, description: p.bio || `Free video editing resources shared by ${p.display_name}.`, body,
+    title: `${p.display_name} (@${p.username})`, description: p.bio || `Products published by ${p.display_name}.`, body,
     og: { url: ctx.absolute(`/u/${p.username}`), image: p.avatar_url || null, type: 'profile' },
   });
 }
@@ -283,8 +290,8 @@ function dashboard(ctx, { result, stats, used, quota }) {
   const body = html`
   <div class="container">
     <header class="pagehead">
-      <div><h1>My uploads</h1><p class="sub">Your files, their links and how they're doing.</p></div>
-      <a class="btn btn-primary" href="/upload">${icon('upload')}<span>Upload</span></a>
+      <div><h1>My products</h1><p class="sub">Your products, their links and how they're doing. <a href="/dashboard/analytics">See analytics</a>.</p></div>
+      <div class="btnrow"><a class="btn btn-secondary" href="/dashboard/analytics">${icon('trending')}<span>Analytics</span></a><a class="btn btn-primary" href="/upload">${icon('upload')}<span>Publish</span></a></div>
     </header>
     <div class="statgrid">
       <div class="stat"><span class="stat-icon">${icon('box')}</span><p class="stat-label">Files</p><p class="stat-num">${formatCount(stats.uploads)}</p></div>
@@ -312,7 +319,7 @@ function dashboard(ctx, { result, stats, used, quota }) {
     </ul>` : emptyState('No uploads yet', 'Your files, their share links and download counts will show up here.', html`<a class="btn btn-primary" href="/upload">${icon('upload')}<span>Upload your first file</span></a>`, 'upload')}
     ${pagination(result, '/dashboard')}
   </div>`;
-  return layout(ctx, { title: 'My uploads', body, noindex: true });
+  return layout(ctx, { title: 'My products', body, noindex: true });
 }
 
-module.exports = { home, browse, profile, saved, dashboard };
+module.exports = { home, browse, profile, saved, dashboard, socialLinks };
