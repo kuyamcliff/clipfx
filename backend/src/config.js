@@ -114,6 +114,10 @@ function loadConfig(overrides = {}) {
   config.dbFile = overrides.dbFile || env.DB_FILE || path.join(config.dataDir, 'clipfx.db');
   // Postgres (e.g. Supabase) when set; otherwise SQLite in the data directory.
   config.databaseUrl = overrides.databaseUrl ?? (env.DATABASE_URL || '');
+  // Cloudflare D1 through the clipfx-db Worker. Takes precedence over DATABASE_URL.
+  config.d1Url = overrides.d1Url ?? (env.D1_URL || '');
+  config.d1Secret = overrides.d1Secret ?? (env.D1_SECRET || '');
+  if (config.d1Url && !config.d1Secret) throw new Error('D1_URL is set but D1_SECRET is missing.');
   config.databaseSchema = overrides.databaseSchema || env.DATABASE_SCHEMA || 'clipfx';
   // In production, files must go to R2. Local disk is for development (or an explicit opt-in).
   config.uploadsEnabled = overrides.uploadsEnabled ?? (config.storage === 'r2' || !production || bool(env.ALLOW_LOCAL_STORAGE, false));

@@ -8,6 +8,7 @@
     "start": "node --disable-warning=ExperimentalWarning src/server.js",
     "dev": "node --disable-warning=ExperimentalWarning --watch src/server.js",
     "test": "node --disable-warning=ExperimentalWarning --test --test-concurrency=1 \"test/*.test.js\"",
+    "test:d1": "TEST_D1=1 node --disable-warning=ExperimentalWarning --test --test-concurrency=1 \"test/*.test.js\"",
     "seed": "node --disable-warning=ExperimentalWarning scripts/seed.js",
     "r2:cors": "node scripts/r2-cors.js"
   },

@@ -1,0 +1,1 @@
+{ "name": "clipfx-migrate", "private": true, "dependencies": { "pg": "^8.23.1" } }

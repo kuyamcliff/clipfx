@@ -1,0 +1,12 @@
+{
+  // One-off Postgres -> D1 copy. Secrets: DATABASE_URL, MIGRATE_SECRET. Delete the Worker afterwards.
+  "name": "clipfx-migrate",
+  "main": "src/index.js",
+  "compatibility_date": "2026-10-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "preview_urls": false,
+  "d1_databases": [
+    { "binding": "DB", "database_name": "clipfx", "database_id": "8cb4abb6-4be3-4a06-90ec-f697f014a6de" }
+  ]
+}

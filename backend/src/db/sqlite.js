@@ -217,4 +217,4 @@ function openSqlite(file) {
   };
 }
 
-module.exports = { openSqlite };
+module.exports = { openSqlite, SCHEMA };
