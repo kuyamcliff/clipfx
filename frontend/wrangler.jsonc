@@ -19,6 +19,7 @@
     "NODE_ENV": "production",
     "BACKEND_URL": "https://clipfx-1x49.onrender.com",
     "PUBLIC_URL": "https://www.clipfx.me",
+    "PAGES_DOMAIN": "clipfx.me",
     "CF_ACCOUNT_ID": "77d44239338105659a28e17c79b16d7e"
   },
   "analytics_engine_datasets": [{ "binding": "ANALYTICS", "dataset": "clipfx_events" }],
