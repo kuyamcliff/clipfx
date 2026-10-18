@@ -17,6 +17,8 @@ async function createApp(config, { log = console } = {}) {
   fs.mkdirSync(config.tmpDir, { recursive: true });
 
   const db = await openDatabase(config);
+  // Products from the media-library days move onto the new developer categories.
+  await db.batch(Object.entries(require('./catalog').LEGACY_CATEGORIES).map(([from, to]) => ['UPDATE assets SET category = ? WHERE category = ?', [to, from]]));
   const storage = createStorage(config);
   const models = createModels(db, { storage });
   const media = createMedia({ config, models, storage, log });

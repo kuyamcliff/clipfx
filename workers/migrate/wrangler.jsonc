@@ -1,11 +1,12 @@
 {
-  // One-off Postgres -> D1 copy. Secrets: DATABASE_URL, MIGRATE_SECRET. Delete the Worker afterwards.
+  // One-off Postgres -> D1 copy. Secret: MIGRATE_SECRET. Delete the Worker and Hyperdrive config afterwards.
   "name": "clipfx-migrate",
   "main": "src/index.js",
   "compatibility_date": "2026-10-01",
   "compatibility_flags": ["nodejs_compat"],
   "workers_dev": true,
   "preview_urls": false,
+  "hyperdrive": [{ "binding": "HYPERDRIVE", "id": "017605f128d94861822efc1b2ac9ffbf" }],
   "d1_databases": [
     { "binding": "DB", "database_name": "clipfx", "database_id": "8cb4abb6-4be3-4a06-90ec-f697f014a6de" }
   ]

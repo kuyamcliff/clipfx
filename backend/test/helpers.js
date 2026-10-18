@@ -105,7 +105,7 @@ function client(base) {
 }
 
 const baseFields = (extra = {}) => ({
-  title: 'Organic Light Leaks', category: 'overlays', license: 'cc0', visibility: 'public', rights: true,
+  title: 'Organic Light Leaks', category: 'media', license: 'cc0', visibility: 'public', rights: true,
   tags: 'light leak, film, warm', software: ['ae', 'pr'], description: 'Twelve light leaks.', ...extra,
 });
 

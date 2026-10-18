@@ -1,6 +1,6 @@
 'use strict';
 const crypto = require('node:crypto');
-const { FILE_TYPES, CATEGORY_MAP, SOFTWARE_MAP, LICENSE_MAP, KINDS } = require('../catalog');
+const { FILE_TYPES, SOFTWARE_MAP, LICENSE_MAP, KINDS, normalizeCategory } = require('../catalog');
 const { isExpired } = require('../models');
 const { hashPassword, verifyPassword, safeEqual } = require('../security');
 
@@ -24,8 +24,8 @@ function parseAssetFields(body = {}) {
   v.title = String(body.title || '').replace(/\s+/g, ' ').trim().slice(0, 100);
   if (v.title.length < 3) errors.title = 'Give it a title (at least 3 characters).';
   v.description = String(body.description || '').replace(/\r\n?/g, '\n').trim().slice(0, 5000);
-  v.category = String(body.category || '');
-  if (!CATEGORY_MAP[v.category]) errors.category = 'Pick a category.';
+  v.category = normalizeCategory(String(body.category || ''));
+  if (!v.category) errors.category = 'Pick a category.';
   const sw = Array.isArray(body.software) ? body.software : (body.software ? [body.software] : []);
   v.software = [...new Set(sw.map(String).filter((s) => SOFTWARE_MAP[s]))];
   const tags = Array.isArray(body.tags) ? body.tags.join(',') : String(body.tags || '');
@@ -78,7 +78,7 @@ function readFilters(query) {
   const pick = (v, map) => (typeof v === 'string' && map[v] ? v : '');
   return {
     q: typeof query.q === 'string' ? query.q.trim().slice(0, 100) : '',
-    category: pick(query.category, CATEGORY_MAP),
+    category: typeof query.category === 'string' ? normalizeCategory(query.category) : '',
     software: pick(query.software, SOFTWARE_MAP),
     license: pick(query.license, LICENSE_MAP),
     kind: pick(query.kind, KINDS),

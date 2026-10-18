@@ -1,6 +1,7 @@
 // One-off copy of the ClipFX database from Postgres (Supabase) into D1.
 // POST /?dry=1 counts rows only; POST / replaces everything in D1 with the Postgres data.
-// Protected by MIGRATE_SECRET. Delete this Worker after the move.
+// Postgres is reached through Hyperdrive, which keeps the connection to Supabase encrypted.
+// Protected by MIGRATE_SECRET. Delete this Worker (and the Hyperdrive config) after the move.
 import { Client } from 'pg';
 
 // Parents before children, so foreign keys hold while inserting.
@@ -13,14 +14,14 @@ export default {
       return new Response('Not found', { status: 404 });
     }
     const dry = new URL(request.url).searchParams.has('dry');
-    const pg = new Client({ connectionString: env.DATABASE_URL, ssl: { rejectUnauthorized: false } });
+    const pg = new Client({ connectionString: env.HYPERDRIVE.connectionString });
     const report = {};
     try {
       await pg.connect();
-      await pg.query(`SET search_path TO ${env.DATABASE_SCHEMA || 'clipfx'}`);
+      const schema = env.DATABASE_SCHEMA || 'clipfx'; // Hyperdrive pools connections, so no SET search_path
       const data = {};
       for (const t of TABLES) {
-        data[t] = (await pg.query(`SELECT * FROM ${t}`)).rows;
+        data[t] = (await pg.query(`SELECT * FROM ${schema}.${t}`)).rows;
         report[t] = { source: data[t].length };
       }
       if (dry) return Response.json({ dry: true, report });

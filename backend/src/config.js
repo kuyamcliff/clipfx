@@ -62,6 +62,8 @@ function loadConfig(overrides = {}) {
     donateUrl: env.DONATE_URL || '',
     contactEmail: env.CONTACT_EMAIL || '',
     sourceUrl: env.SOURCE_URL || 'https://github.com/kuyamcliff/clipfx',
+    // Developer pages live on <username>.PAGES_DOMAIN (e.g. clipfx.me). Empty = no page subdomains.
+    pagesDomain: (env.PAGES_DOMAIN || '').toLowerCase().replace(/^\.+|\.+$/g, ''),
     adminUsernames: (env.ADMIN_USERNAMES || '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean),
     openSignups: bool(env.OPEN_SIGNUPS, true),
     // Uploading without an account. Anonymous files get a private manage link instead of an owner.
@@ -74,13 +76,13 @@ function loadConfig(overrides = {}) {
       authUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
       tokenUrl: env.GOOGLE_TOKEN_URL || 'https://oauth2.googleapis.com/token',
     },
-    // TikTok Login Kit. Redirect URI registered with TikTok: BASE_URL + /auth/tiktok/callback.
-    tiktok: {
-      clientKey: env.TIKTOK_CLIENT_KEY || '',
-      clientSecret: env.TIKTOK_CLIENT_SECRET || '',
-      authUrl: 'https://www.tiktok.com/v2/auth/authorize/',
-      tokenUrl: 'https://open.tiktokapis.com/v2/oauth/token/',
-      userUrl: 'https://open.tiktokapis.com/v2/user/info/',
+    // "Continue with GitHub" (OAuth App). Callback URL registered on GitHub: BASE_URL + /auth/github/callback.
+    github: {
+      clientId: env.GITHUB_CLIENT_ID || '',
+      clientSecret: env.GITHUB_CLIENT_SECRET || '',
+      authUrl: 'https://github.com/login/oauth/authorize',
+      tokenUrl: env.GITHUB_TOKEN_URL || 'https://github.com/login/oauth/access_token',
+      apiUrl: (env.GITHUB_API_URL || 'https://api.github.com').replace(/\/+$/, ''),
     },
     cookieSecure: bool(env.COOKIE_SECURE, production),
     trustProxy: trustProxy(env.TRUST_PROXY),

@@ -187,7 +187,8 @@ test('search and filters', async () => {
   assert.ok((await titles('q=teal')).includes('Cinematic Teal LUT'));
   assert.ok((await titles('q=cinem')).includes('Cinematic Teal LUT'));
   assert.ok((await titles('category=luts&software=resolve')).includes('Cinematic Teal LUT'));
-  assert.ok(!(await titles('category=overlays')).includes('Cinematic Teal LUT'));
+  assert.ok((await titles('category=media')).includes('Cinematic Teal LUT')); // old "luts" lands in Media & Audio
+  assert.ok(!(await titles('category=apps')).includes('Cinematic Teal LUT'));
   assert.ok(!(await titles('noattr=1')).includes('Cinematic Teal LUT'));
   assert.ok((await titles('tag=orange')).includes('Cinematic Teal LUT'));
   assert.equal((await anon.get('/api/assets?q=%22%29%20OR%20*')).status, 200);
