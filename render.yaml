@@ -45,4 +45,4 @@ services:
       - key: DONATE_URL
         sync: false
       - key: CONTACT_EMAIL
-        sync: false
+        value: info@clipfx.me

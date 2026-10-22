@@ -15,7 +15,7 @@ const META_TTL = 5 * 60 * 1000;
 
 // Used only when the API can't be reached, so error pages still render.
 const FALLBACK_META = {
-  config: { siteName: 'ClipFX', sourceUrl: 'https://github.com/kuyamcliff/clipfx', donateUrl: '', contactEmail: '', storageOrigin: '' },
+  config: { siteName: 'ClipFX', sourceUrl: 'https://github.com/kuyamcliff/clipfx', donateUrl: '', contactEmail: 'info@clipfx.me', storageOrigin: '' },
   catalog: { categories: [], software: [], licenses: [], kinds: {}, fileTypes: {}, previewExts: [], thumbExts: [], kindCategory: {} },
 };
 
