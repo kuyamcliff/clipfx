@@ -28,16 +28,15 @@ before(async () => {
     const b64 = (o) => Buffer.from(JSON.stringify(o)).toString('base64url');
     const claims = { iss: 'https://accounts.google.com', aud: 'site-test-client', exp: Math.floor(Date.now() / 1000) + 600, sub: 'g-site', email: 'gina@example.org', email_verified: true, name: 'Gina Grade' };
     res.writeHead(200, { 'content-type': 'application/json' });
-    if (req.url.startsWith('/github/token')) return res.end(JSON.stringify({ access_token: 'gho_site' }));
-    if (req.url.startsWith('/github/api/user/emails')) return res.end('[]');
-    if (req.url.startsWith('/github/api/user')) return res.end(JSON.stringify({ id: 4242, login: 'tia-codes', name: 'Tia Codes' }));
+    if (req.url.startsWith('/tiktok/token')) return res.end(JSON.stringify({ access_token: 't', open_id: 'tt-site' }));
+    if (req.url.startsWith('/tiktok/user')) return res.end(JSON.stringify({ data: { user: { display_name: 'Tia Cuts' } } }));
     return res.end(JSON.stringify({ id_token: `${b64({ alg: 'RS256' })}.${b64(claims)}.sig` }));
   });
   await new Promise((r) => googleToken.listen(0, '127.0.0.1', r));
   const google = { clientId: 'site-test-client', clientSecret: 'shh', authUrl: 'https://accounts.google.com/o/oauth2/v2/auth', tokenUrl: `http://127.0.0.1:${googleToken.address().port}/token` };
   const fake = `http://127.0.0.1:${googleToken.address().port}`;
-  const github = { clientId: 'Ov-site', clientSecret: 'shh', authUrl: 'https://github.com/login/oauth/authorize', tokenUrl: `${fake}/github/token`, apiUrl: `${fake}/github/api` };
-  api = await createApp(apiConfig({ dataDir, storage: 'local', rateLimits: false, logRequests: false, mediaProcessing: false, internalSecret: 's3cret', google, github }), { log: quiet });
+  const tiktok = { clientKey: 'awsite', clientSecret: 'shh', authUrl: 'https://www.tiktok.com/v2/auth/authorize/', tokenUrl: `${fake}/tiktok/token`, userUrl: `${fake}/tiktok/user` };
+  api = await createApp(apiConfig({ dataDir, storage: 'local', rateLimits: false, logRequests: false, mediaProcessing: false, internalSecret: 's3cret', google, tiktok }), { log: quiet });
   api.server = await listen(api.app);
   const backendUrl = `http://127.0.0.1:${api.server.address().port}`;
   site = { server: await listen(createFrontend(loadConfig({ backendUrl, internalSecret: 's3cret', cookieSecure: false, logRequests: false }), { log: quiet })) };
@@ -104,7 +103,7 @@ const opts = { skip: !haveBackend && 'backend dependencies not installed (run np
 
 test('pages render with security headers', opts, async () => {
   const b = browser();
-  for (const p of ['/', '/browse', '/about', '/guidelines', '/licenses', '/terms', '/privacy', '/copyright', '/login', '/signup']) {
+  for (const p of ['/', '/browse', '/about', '/guidelines', '/licenses', '/terms', '/privacy', '/copyright', '/donate', '/login', '/signup']) {
     const res = await b.get(p);
     assert.equal(res.status, 200, p);
     assert.match(res.headers.get('content-security-policy'), /default-src 'self'/);
@@ -286,18 +285,17 @@ test('continue with Google: redirect, state check, callback', opts, async () => 
   assert.equal(res.headers.get('location'), '/login');
 });
 
-test('GitHub sign-up, then connecting Google from settings', opts, async () => {
+test('TikTok sign-up, then connecting Google from settings', opts, async () => {
   const b = browser();
-  assert.match((await b.get('/signup')).text_, /href="\/auth\/github"/);
-  assert.doesNotMatch((await b.get('/signup')).text_, /tiktok/i);
-  let res = await b.get('/auth/github');
+  assert.match((await b.get('/signup')).text_, /href="\/auth\/tiktok"/);
+  let res = await b.get('/auth/tiktok');
   const to = new URL(res.headers.get('location'));
-  assert.equal(to.host, 'github.com');
-  res = await b.get(`/auth/github/callback?code=abc&state=${encodeURIComponent(to.searchParams.get('state'))}`);
+  assert.equal(to.host, 'www.tiktok.com');
+  res = await b.get(`/auth/tiktok/callback?code=abc&state=${encodeURIComponent(to.searchParams.get('state'))}`);
   assert.equal(res.headers.get('location'), '/settings');
   let settings = (await b.get('/settings')).text_;
-  assert.match(settings, /Tia Codes/);
-  assert.match(settings, /action="\/settings\/connections\/github\/remove"/);
+  assert.match(settings, /Tia Cuts/);
+  assert.match(settings, /action="\/settings\/connections\/tiktok\/remove"/);
   assert.match(settings, /href="\/auth\/google\?next=\/settings"/);
 
   // Google is already used by another account (from the earlier test), so connecting it is refused.
@@ -309,7 +307,7 @@ test('GitHub sign-up, then connecting Google from settings', opts, async () => {
   assert.match(settings, /already used by another/);
 
   // Only sign-in method on a passwordless account: disconnect is refused with a message.
-  res = await b.post('/settings/connections/github/remove', { form: { back: '/settings' } });
+  res = await b.post('/settings/connections/tiktok/remove', { form: { back: '/settings' } });
   assert.equal(res.status, 303);
   assert.match((await b.get('/settings')).text_, /Set a password or connect another sign-in method/);
 });
@@ -328,9 +326,9 @@ test('sitemaps list pages, every public asset and every account', opts, async ()
   for (const part of ['pages', 'assets-1', 'creators-1']) assert.match(index.text_, new RegExp(`/sitemaps/${part}\\.xml</loc>`));
 
   const pages = (await anon.get('/sitemaps/pages.xml')).text_;
-  assert.match(pages, /\/browse\?category=devtools<\/loc>/);
+  assert.match(pages, /\/browse\?category=overlays<\/loc>/);
   assert.match(pages, /\/licenses<\/loc>/);
-  assert.match(pages, /\/browse\?category=apps<\/loc>/);
+  assert.match(pages, /\/browse\?category=software<\/loc>/);
   assert.match(pages, /\/browse\?software=ae<\/loc>/);
   assert.match(pages, /\/browse\?sort=trending<\/loc>/);
   assert.match(pages, /\/developers\/mcp<\/loc>/);
@@ -564,7 +562,7 @@ test('MCP: sign-in required, then handshake, tools and account tools with an API
 
   const cats = await tool('list_categories', {});
   assert.equal(cats.isError, false);
-  assert.ok(cats.structuredContent.categories.some((c) => c.id === 'apps'));
+  assert.ok(cats.structuredContent.categories.some((c) => c.id === 'software'));
   assert.equal((await tool('whoami', {})).structuredContent.username, 'agentowner');
 
   const up = await tool('upload_small_file', { file_name: 'agent-pack.zip', content_base64: Buffer.from('PK agent made this').toString('base64') }, token);
@@ -707,109 +705,4 @@ test('consent page shows the Claude logo only for real Claude return addresses',
   assert.doesNotMatch(await page('Claude', 'https://evil.example/cb'), /apps\/claude\.svg/);
   assert.doesNotMatch(await page('Totally Legit', 'http://127.0.0.1:5000/cb'), /apps\/claude\.svg/);
   assert.equal((await fetch(`${site.base}/static/img/apps/claude.svg`)).status, 200);
-});
-
-// ---- Developer pages on subdomains ------------------------------------------------------------
-// A second copy of the site with PAGES_DOMAIN on; requests carry the Host they'd have in production.
-let pagesSite = null;
-async function pagesBase() {
-  if (!pagesSite) {
-    const app = createFrontend(loadConfig({
-      backendUrl: api.app.locals.base, internalSecret: 's3cret', cookieSecure: false, logRequests: false,
-      pagesDomain: 'clipfx.test', publicUrl: 'http://www.clipfx.test', track: (p) => pagesSite.points.push(p),
-    }), { log: quiet });
-    pagesSite = { server: await listen(app), points: [] };
-    after(() => new Promise((r) => pagesSite.server.close(r)));
-  }
-  return pagesSite;
-}
-function hostGet(host, p, headers = {}) {
-  return new Promise((resolve, reject) => {
-    const { port } = pagesSite.server.address();
-    const req = require('node:http').request({ host: '127.0.0.1', port, path: p, method: 'GET', headers: { host, 'user-agent': 'Mozilla/5.0 (Macintosh)', ...headers } }, (res) => {
-      let text = '';
-      res.on('data', (c) => { text += c; });
-      res.on('end', () => resolve({ status: res.statusCode, headers: res.headers, text }));
-    });
-    req.on('error', reject);
-    req.end();
-  });
-}
-
-test('developer pages: name.domain shows the page, products by direct link, everything else goes to www', opts, async () => {
-  await pagesBase();
-  const b = browser();
-  await b.signup('jane_dev');
-  const mine = (await b.upload(fields({ title: 'Jane Tiny CLI', category: 'devtools', license: 'mit' }), { name: 'tiny.zip', data: Buffer.from('PK jane') })).json_.slug;
-  const res0 = await b.post('/settings/page', { form: { headline: 'Tools for terminal people', accent: '#22c55e', theme: 'dark', layout: 'list', cover: 'mesh', featured: mine, link_label_0: 'Docs', link_url_0: 'docs.jane.dev', cta_label: 'Star on GitHub', cta_url: 'https://github.com/jane', show_stats: 'on' } });
-  assert.equal(res0.status, 303);
-  const other = browser();
-  await other.signup('otto_dev');
-  const theirs = (await other.upload(fields({ title: 'Otto Thing' }), { name: 'otto.zip', data: Buffer.from('PK otto') })).json_.slug;
-
-  let r = await hostGet('jane-dev.clipfx.test', '/');
-  assert.equal(r.status, 200);
-  assert.match(r.text, /Tools for terminal people/);
-  assert.match(r.text, /data-theme="dark"/);
-  assert.match(r.text, /--brand:#22c55e/);
-  assert.match(r.text, /cover-mesh/);
-  assert.match(r.text, new RegExp(`href="https://jane-dev\\.clipfx\\.test/${mine}"`));
-  assert.match(r.text, /href="https:\/\/docs\.jane\.dev\/"/);
-  assert.match(r.text, /Star on GitHub/);
-  assert.match(r.text, /href="http:\/\/www\.clipfx\.test\/login"/, 'site links point back to the main site');
-  assert.ok(pagesSite.points.some((p) => p.indexes[0] === 'jane_dev' && p.blobs[0] === 'page'), 'page view recorded');
-
-  r = await hostGet('jane-dev.clipfx.test', `/${mine}`);
-  assert.equal(r.status, 200);
-  assert.match(r.text, /Jane Tiny CLI/);
-  assert.ok(pagesSite.points.some((p) => p.blobs[0] === 'product' && p.blobs[1] === mine));
-  r = await hostGet('jane-dev.clipfx.test', `/${theirs}`);
-  assert.equal(r.status, 404, 'someone else’s product isn’t served on this page');
-  r = await hostGet('jane-dev.clipfx.test', `/${mine}/download`);
-  assert.equal(r.status, 302);
-  assert.equal(r.headers.location, `/a/${mine}/download`);
-  assert.ok(pagesSite.points.some((p) => p.blobs[0] === 'download'));
-
-  // Bots aren't counted.
-  const before = pagesSite.points.length;
-  await hostGet('jane-dev.clipfx.test', '/', { 'user-agent': 'Googlebot/2.1' });
-  assert.equal(pagesSite.points.length, before);
-
-  assert.equal((await hostGet('nobody-here.clipfx.test', '/')).status, 404);
-  r = await hostGet('jane-dev.clipfx.test', '/settings');
-  assert.equal(r.status, 302);
-  assert.equal(r.headers.location, 'http://www.clipfx.test/settings');
-  r = await hostGet('jane-dev.clipfx.test', '/mcp');
-  assert.equal(r.status, 308);
-  r = await hostGet('clipfx.test', '/browse?q=x');
-  assert.equal(r.status, 301);
-  assert.equal(r.headers.location, 'http://www.clipfx.test/browse?q=x');
-  r = await hostGet('www.clipfx.test', '/u/jane_dev');
-  assert.equal(r.headers.location, 'https://jane-dev.clipfx.test/');
-  r = await hostGet('jane-dev.clipfx.test', '/robots.txt');
-  assert.match(r.text, /Sitemap: http:\/\/www\.clipfx\.test\/sitemap\.xml/);
-  r = await hostGet('www.clipfx.test', '/sitemaps/creators-1.xml');
-  assert.match(r.text, /<loc>https:\/\/jane-dev\.clipfx\.test\/<\/loc>/);
-});
-
-test('page editor saves settings, shows field errors, and the analytics page renders', opts, async () => {
-  const b = browser();
-  await b.signup('pat_dev');
-  let page = (await b.get('/settings/page')).text_;
-  assert.match(page, /name="accent"/);
-  assert.match(page, /Publish a product first/);
-  let res = await b.post('/settings/page', { form: { link_label_0: 'Bad', link_url_0: 'javascript:alert(1)', accent: '#6366f1' } });
-  assert.equal(res.status, 400);
-  assert.match(res.text_, /aria-invalid="true"/);
-  res = await b.post('/settings/page', { form: { headline: 'Hello', accent: '#6366f1', theme: 'light' } });
-  assert.equal(res.status, 303);
-  page = (await b.get('/settings/page')).text_;
-  assert.match(page, /value="Hello"/);
-
-  const a = await b.get('/dashboard/analytics?days=7');
-  assert.equal(a.status, 200);
-  assert.match(a.text_, /<h1>Analytics<\/h1>/);
-  assert.match(a.text_, /Downloads/);
-  assert.match(a.text_, /Show as table/);
-  assert.equal((await browser().get('/dashboard/analytics')).status, 302, 'needs an account');
 });

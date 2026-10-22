@@ -1,8 +1,6 @@
 'use strict';
 // ClipFX website. Renders pages server-side (so share links unfurl with thumbnails), handles
-// HTML forms, and proxies the browser's /api calls to the backend. Runs on Cloudflare Workers
-// (worker.js) and on plain Node for development (server.js). Developer pages are served on
-// <username>.<PAGES_DOMAIN> by the same app.
+// HTML forms, and proxies the browser's /api calls to the backend. Runs on Vercel as one function.
 const path = require('node:path');
 const crypto = require('node:crypto');
 const express = require('express');
@@ -11,23 +9,13 @@ const { createBackend } = require('./backend');
 const { createMcp } = require('./mcp');
 const { createOAuth } = require('./oauth');
 const { buildCatalog, decorate, decorateAll, withCounts } = require('./decorate');
-const { createAnalytics } = require('./analytics');
 
-const STATIC_PAGES = ['about', 'guidelines', 'licenses', 'terms', 'privacy', 'copyright', 'developers'];
-// Subdomains that belong to the site itself, never to a developer page.
-const SITE_HOSTS = new Set(['www', 'api', 'image', 'images', 'video', 'audio', 'download', 'downloads', 'music', 'mcp', 'autoclip', 'cdn', 'assets', 'mail', 'docs', 'status', 'app']);
-const SLUG_RE = /^[A-Za-z0-9]{4,32}$/;
-// First path segments that are main-site pages; on a developer host they redirect to www instead
-// of being taken for a product slug.
-const SITE_PATHS = new Set(['browse', 'search', 'upload', 'login', 'signup', 'logout', 'settings', 'dashboard', 'saved', 'admin',
-  'developers', 'auth', 'oauth', 'reset', 'about', 'guidelines', 'licenses', 'terms', 'privacy', 'copyright', 'donate', 'api', 'static',
-  'sitemaps', 'healthz', 'mcp']);
-const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const STATIC_PAGES = ['about', 'guidelines', 'licenses', 'terms', 'privacy', 'copyright', 'donate', 'developers'];
 const META_TTL = 5 * 60 * 1000;
 
 // Used only when the API can't be reached, so error pages still render.
 const FALLBACK_META = {
-  config: { siteName: 'ClipFX', sourceUrl: 'https://github.com/kuyamcliff/clipfx', contactEmail: '', storageOrigin: '' },
+  config: { siteName: 'ClipFX', sourceUrl: 'https://github.com/kuyamcliff/clipfx', donateUrl: '', contactEmail: '', storageOrigin: '' },
   catalog: { categories: [], software: [], licenses: [], kinds: {}, fileTypes: {}, previewExts: [], thumbExts: [], kindCategory: {} },
 };
 
@@ -68,11 +56,6 @@ function createFrontend(config, { log = console } = {}) {
   app.set('trust proxy', true);
   const backend = createBackend(config, { log });
   const cookieBase = { httpOnly: true, sameSite: 'lax', secure: config.cookieSecure, path: '/' };
-  const analytics = createAnalytics(config);
-  const domain = config.pagesDomain;
-  const mainOrigin = config.publicUrl || (domain ? `https://www.${domain}` : '');
-  const devHostOf = (username) => (domain ? `${String(username).replace(/_/g, '-')}.${domain}` : null);
-  const hostRe = domain ? new RegExp(`^([a-z0-9][a-z0-9-]{1,38}[a-z0-9])\\.${escapeRe(domain)}$`) : null;
 
   // ---- Site metadata (settings + taxonomy), cached briefly ----------------------------
   let meta = null;
@@ -94,25 +77,10 @@ function createFrontend(config, { log = console } = {}) {
     });
   }
 
-  // On Cloudflare, Workers Static Assets serves public/ before the app runs; this covers Node.
-  if (config.serveStatic !== false) app.use(express.static(path.join(__dirname, '..', 'public'), { index: false, maxAge: config.production ? '1d' : 0 }));
+  // On Vercel the CDN serves public/ directly; this covers local development.
+  app.use(express.static(path.join(__dirname, '..', 'public'), { index: false, maxAge: config.production ? '1d' : 0 }));
   app.get('/favicon.ico', (req, res) => res.redirect(301, '/static/brand/favicon.ico'));
   app.get('/healthz', (req, res) => res.json({ ok: true }));
-
-  // clipfx.me -> www.clipfx.me; jane-doe.clipfx.me -> jane_doe's developer page (handled further down).
-  app.use((req, res, next) => {
-    if (!domain) return next();
-    const host = String(req.hostname || '').toLowerCase();
-    if (host === domain) return res.redirect(301, `${mainOrigin}${req.originalUrl}`);
-    const m = hostRe.exec(host);
-    if (m && !SITE_HOSTS.has(m[1])) {
-      req.devUser = m[1].replace(/-/g, '_');
-      req.devHost = host;
-      // Accounts, MCP and OAuth only live on the main site.
-      if (/^\/(mcp|oauth|\.well-known)(\/|$)/.test(req.path)) return res.redirect(308, `${mainOrigin}${req.originalUrl}`);
-    }
-    return next();
-  });
 
   // MCP server for AI agents. Mounted before cookies: it only ever uses the API key it's sent.
   const oauth = createOAuth({ backend, config });
@@ -163,10 +131,7 @@ function createFrontend(config, { log = console } = {}) {
       req.ctx = {
         config: m.config, catalog: m.catalog, apiScopes: m.apiScopes || [], user: s.user || null, openReports: s.openReports || 0,
         csrf: req.cookies.csrf, flash, path: req.path, query: req.query,
-        theme: req.themeOverride || (['light', 'dark'].includes(req.cookies.theme) ? req.cookies.theme : ''),
-        // Links from a developer page back to the main site (login, upload, settings...).
-        mainUrl: (p) => (req.devHost && mainOrigin ? `${mainOrigin}${p}` : p),
-        devHostOf,
+        theme: ['light', 'dark'].includes(req.cookies.theme) ? req.cookies.theme : '',
         asset: (p) => `${p}?v=${config.assetVersion}`,
         absolute: (p) => (/^https?:\/\//.test(p) ? p : `${origin}${p}`),
         decorate: (a) => decorate(a, m.catalog),
@@ -204,50 +169,6 @@ function createFrontend(config, { log = console } = {}) {
       return res.fail(r.status, 'Something went wrong', r.data.error || 'That didn’t work.');
     };
     next();
-  });
-
-  // ---- Developer pages (name.clipfx.me) ----------------------------------------------------
-  // Read-only: the page itself, direct product links (/slug) and downloads (/slug/download).
-  // Everything else on a developer host goes to the main site.
-  app.use(async (req, res, next) => {
-    if (!req.devUser) return next();
-    const username = req.devUser;
-    const parts = req.path.split('/').filter(Boolean);
-    if (req.method === 'GET' && req.path === '/robots.txt') {
-      return res.type('text/plain').send(`User-agent: *\nAllow: /\nDisallow: /*/download\n\nSitemap: ${mainOrigin}/sitemap.xml\n`);
-    }
-    if (req.method === 'GET' && parts.length === 0) {
-      const qs = new URLSearchParams({ page: req.query.page || '', sort: req.query.sort || '' }).toString();
-      const [ctx, r] = await Promise.all([req.context(), req.api('GET', `/api/users/${encodeURIComponent(username)}?${qs}`)]);
-      if (r.status === 404) return res.fail(404, 'Page not found', 'There’s no developer page at this address.');
-      if (r.status !== 200) return res.apiError(r);
-      const page = r.data.profile.page || {};
-      if (page.theme === 'dark' || page.theme === 'light') { req.themeOverride = page.theme; ctx.theme = page.theme; }
-      analytics.record(req, 'page', username);
-      res.setHeader('Cache-Control', 'public, max-age=60');
-      return res.view(views.devPage, {
-        ...r.data, host: req.devHost,
-        featured: ctx.decorateAll(r.data.featured || []),
-        result: { ...r.data.result, items: ctx.decorateAll(r.data.result.items) },
-      });
-    }
-    if (req.method === 'GET' && parts.length <= 2 && SLUG_RE.test(parts[0] || '') && !SITE_PATHS.has(parts[0]) && (parts.length === 1 || parts[1] === 'download')) {
-      req.params = { slug: parts[0] };
-      if (parts[1] === 'download') {
-        const peek = await req.api('GET', `/api/assets/${encodeURIComponent(parts[0])}`);
-        if (peek.status === 200 && peek.data.asset.username !== username) return res.fail(404, 'Not found', 'This product isn’t on this page.');
-        analytics.record(req, 'download', username, parts[0]);
-        return res.redirect(302, `/a/${encodeURIComponent(parts[0])}/download`);
-      }
-      const data = await loadAsset(req, res, { view: true });
-      if (!data) return undefined;
-      if (data.asset.username !== username) return res.fail(404, 'Not found', 'This product isn’t on this page.');
-      analytics.record(req, 'product', username, parts[0]);
-      return res.view(views.asset, { ...data, manageKey: '', justUploaded: false, devHost: req.devHost });
-    }
-    // Downloads pass through; everything else (static files are served before the app) goes to the main site.
-    if (req.method === 'GET' && /^\/a\/[^/]+\/download$/.test(req.path)) return next();
-    return res.redirect(req.method === 'GET' ? 302 : 307, `${mainOrigin}${req.originalUrl}`);
   });
 
   // HTML form posts: same-origin + CSRF check here; the API checks the token again.
@@ -317,8 +238,6 @@ function createFrontend(config, { log = console } = {}) {
   app.get('/c/:category', (req, res) => res.redirect(`/browse?category=${encodeURIComponent(req.params.category)}`));
 
   app.get('/u/:username', async (req, res) => {
-    // With developer pages on, the profile lives at name.clipfx.me.
-    if (domain && /^[a-z0-9_]{3,24}$/.test(req.params.username)) return res.redirect(301, `https://${devHostOf(req.params.username)}/`);
     const qs = new URLSearchParams({ page: req.query.page || '', sort: req.query.sort || '' }).toString();
     const [ctx, r] = await Promise.all([req.context(), req.api('GET', `/api/users/${encodeURIComponent(req.params.username)}?${qs}`)]);
     if (r.status === 404) return res.fail(404, 'Creator not found', 'There’s no creator with that username.');
@@ -490,10 +409,10 @@ function createFrontend(config, { log = console } = {}) {
     return res.view(views.login, { values: { login: req.body.login }, error: r.data.error, next }, r.status);
   });
 
-  // Sign in with Google or GitHub. The API builds the provider URL and exchanges the code; this side
+  // Sign in with Google or TikTok. The API builds the provider URL and exchanges the code; this side
   // keeps state + verifier in a short-lived cookie and checks them when the visitor comes back.
   const OAUTH_COOKIE = 'oauth';
-  const PROVIDERS = { google: 'Google', github: 'GitHub' };
+  const PROVIDERS = { google: 'Google', tiktok: 'TikTok' };
   const knownProvider = (req, res, next) => (Object.hasOwn(PROVIDERS, req.params.provider) ? next() : next('route'));
 
   app.get('/auth/:provider', knownProvider, async (req, res) => {
@@ -573,38 +492,6 @@ function createFrontend(config, { log = console } = {}) {
     api: '/api/me/delete', redirect: '/',
     rerender: (req, res, { errors }) => renderSettings(req, res, { errors, status: 400 }),
   }));
-
-  // ---- Developer page editor & analytics ------------------------------------------------
-  const renderPageSettings = async (req, res, { errors = {}, values = null, status = 200 } = {}) => {
-    const [r, mine] = await Promise.all([req.api('GET', '/api/me/page'), req.api('GET', '/api/me/assets?page=1')]);
-    if (r.status !== 200) return res.apiError(r);
-    const products = mine.status === 200 ? mine.data.result.items.filter((a) => a.status === 'active' && a.visibility === 'public') : [];
-    return res.view(views.pageSettings, { page: r.data.page, host: r.data.host, products, errors, values }, status);
-  };
-  const pageBody = (b) => ({
-    headline: b.headline, about: b.about, accent: b.accent, theme: b.theme, layout: b.layout, cover: b.cover,
-    featured: list(b.featured),
-    links: Array.from({ length: 12 }, (_, i) => ({ label: b[`link_label_${i}`] || '', url: b[`link_url_${i}`] || '' })),
-    cta: { label: b.cta_label || '', url: b.cta_url || '' },
-    show_stats: checked(b.show_stats), show_socials: checked(b.show_socials),
-  });
-  app.get('/settings/page', requireUser, (req, res) => renderPageSettings(req, res));
-  app.post('/settings/page', requireUser, formAction({
-    api: '/api/me/page', body: (req) => pageBody(req.body), redirect: '/settings/page',
-    rerender: (req, res, { errors }) => renderPageSettings(req, res, { errors, values: pageBody(req.body), status: 400 }),
-  }));
-
-  app.get('/dashboard/analytics', requireUser, async (req, res) => {
-    const ctx = await req.context();
-    const days = [7, 30, 90].includes(Number(req.query.days)) ? Number(req.query.days) : 30;
-    const [dl, mine, visits] = await Promise.all([
-      req.api('GET', `/api/me/downloads?days=${days}`), req.api('GET', '/api/me/assets?page=1'), analytics.report(ctx.user.username, days),
-    ]);
-    if (dl.status !== 200) return res.apiError(dl);
-    const titles = Object.fromEntries(mine.status === 200 ? mine.data.result.items.map((a) => [a.slug, a.title]) : []);
-    res.setHeader('Cache-Control', 'no-store');
-    return res.view(views.analytics, { visits, downloads: dl.data, days, host: devHostOf(ctx.user.username), titles });
-  });
 
   app.get('/developers/api', async (req, res) => res.view(views.apiDocs));
   app.get('/developers/mcp', async (req, res) => res.view(views.mcpDocs));
@@ -712,11 +599,14 @@ function createFrontend(config, { log = console } = {}) {
 
   for (const page of STATIC_PAGES) {
     app.get(`/${page}`, async (req, res) => {
-      const stats = page === 'about' ? (await req.api('GET', '/api/stats')).data.stats : null;
+      const stats = page === 'about' || page === 'donate' ? (await req.api('GET', '/api/stats')).data.stats : null;
       return res.view(views.staticPage, { page, stats });
     });
   }
-  app.get(['/donate', '/donate/go'], (req, res) => res.redirect(301, '/about'));
+  app.get('/donate/go', async (req, res) => {
+    const m = await getMeta(req);
+    return m.config.donateUrl ? res.redirect(m.config.donateUrl) : res.redirect('/donate');
+  });
 
   // Open to every search engine and AI crawler. Named AI agents share the same rules as everyone,
   // listed so it's explicit they're welcome. Private areas and actions stay out.
@@ -739,28 +629,26 @@ function createFrontend(config, { log = console } = {}) {
     const origin = siteOrigin(req);
     const m = await getMeta(req);
     res.setHeader('Cache-Control', 'public, max-age=3600');
-    const pages = domain ? `https://{username}.${domain}/ (underscores in usernames become hyphens)` : `${origin}/u/{username}`;
     res.type('text/plain').send(`# ${m.config.siteName}
 
-> ${m.config.siteName} is a platform where developers publish and distribute their products: apps and desktop software, developer tools and CLIs, plugins and extensions, libraries and SDKs, templates and starter kits, scripts, AI models, games, design and media assets. Every developer has their own page at ${pages} with their products, links and a direct link for each product. Downloads need no account. Every product shows its license and the SHA-256 of its file.
+> ${m.config.siteName} is a free, nonprofit library of video editing resources: stock footage, transitions, overlays and VFX, LUTs, project templates, motion graphics, presets and MOGRTs, sound effects, music, textures and 3D assets. Anyone can browse and download without an account. Every asset shows its license.
 
 ## Pages
-- [Home](${origin}/): search, trending products and developers
-- [Browse](${origin}/browse): every public product; filter with ?q=, ?category=, ?software= (platform), ?license=, ?kind=, ?sort=trending|downloads
+- [Home](${origin}/): search and featured resources
+- [Browse](${origin}/browse): every public asset; filter with ?q=, ?category=, ?software=, ?license=, ?kind=, ?sort=trending|downloads
 ${m.catalog.categories.map((c) => `- [${c.name}](${origin}/browse?category=${c.id}): ${c.blurb}`).join('\n')}
-- Developer pages: ${pages}; a product on a developer page: https://{username}.${domain || 'clipfx.me'}/{slug}
 - [Licenses](${origin}/licenses): what each license allows
 - [Guidelines](${origin}/guidelines): accepted formats and rules
 
 ## Public JSON API (no key needed)
-- ${origin}/api/assets?q=markdown&category=devtools&page=1 : search products
-- ${origin}/api/assets/{slug} : one product with its license, file details, SHA-256 and developer
-- ${origin}/api/users/{username} : a developer's profile, page settings, featured products and products
-- ${origin}/api/creators : most downloaded developers
-- ${origin}/mcp : MCP server (Streamable HTTP) for AI agents. Sign-in required: OAuth ("Sign in with ClipFX", discovered via the 401 response) or an API key. Search, download, publish, edit and saved files. Setup: ${origin}/developers/mcp
-- ${origin}/developers/api : API keys for acting on a developer's own account (publish, edit, delete, page settings, download stats), with scoped permissions
-- ${origin}/api/meta : categories, platforms, licenses and accepted file types
-- Product pages live at ${origin}/a/{slug}; downloads at ${origin}/a/{slug}/download
+- ${origin}/api/assets?q=film+grain&category=overlays&page=1 : search assets
+- ${origin}/api/assets/{slug} : one asset with its license, file details and creator
+- ${origin}/api/users/{username} : a creator's profile and uploads
+- ${origin}/api/creators : most downloaded creators
+- ${origin}/mcp : MCP server (Streamable HTTP) for AI agents. Sign-in required: OAuth ("Sign in with ClipFX", discovered via the 401 response) or an API key. Search, download, upload, edit and saved files. Setup: ${origin}/developers/mcp
+- ${origin}/developers/api : API keys for acting on a user's own account (upload, edit, delete, saved files, profile), with scoped permissions
+- ${origin}/api/meta : categories, software, licenses and accepted file types
+- Asset pages live at ${origin}/a/{slug}; downloads at ${origin}/a/{slug}/download
 
 ## Optional
 - [API documentation](${origin}/developers)
@@ -832,8 +720,7 @@ ${m.catalog.categories.map((c) => `- [${c.name}](${origin}/browse?category=${c.i
     const r = await req.api('GET', `/api/sitemap/users?page=${n}`);
     if (r.status !== 200) return res.status(503).type('text/plain').send('Sitemap unavailable, try again later.');
     if (!r.data.items.length && n > 1) return res.fail(404, 'Page not found', 'No such sitemap.');
-    // Developer pages live on their own subdomain when PAGES_DOMAIN is set; /u/name redirects there.
-    const entries = r.data.items.map((u) => urlEntry(domain ? `https://${devHostOf(u.username)}/` : `${origin}/u/${encodeURIComponent(u.username)}`, u.lastmod));
+    const entries = r.data.items.map((u) => urlEntry(`${origin}/u/${encodeURIComponent(u.username)}`, u.lastmod));
     return sendXml(res, `<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${entries.join('')}</urlset>`);
   });
 

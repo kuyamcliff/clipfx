@@ -10,9 +10,6 @@ const FORWARD_REQUEST_HEADERS = ['accept', 'content-type', 'content-length', 'x-
 const FORWARD_RESPONSE_HEADERS = ['content-type', 'content-range', 'content-disposition', 'accept-ranges', 'cache-control', 'etag', 'last-modified', 'location', 'retry-after', 'x-robots-tag', 'content-security-policy'];
 
 function clientIp(req) {
-  // On Cloudflare the edge sets CF-Connecting-IP and visitors can't override it.
-  const cf = req.get('cf-connecting-ip');
-  if (cf) return cf;
   const real = req.get('x-real-ip');
   if (real) return real;
   const xff = req.get('x-forwarded-for');

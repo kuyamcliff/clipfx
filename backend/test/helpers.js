@@ -5,19 +5,16 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const { loadConfig } = require('../src/config');
 const { createApp } = require('../src/app');
-const { startFakeD1 } = require('./fake-d1');
 
 async function startServer(overrides = {}) {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'clipfx-api-test-'));
   // Set TEST_DATABASE_URL to run the suite against Postgres (each server gets its own schema).
   const pg = process.env.TEST_DATABASE_URL;
   const schema = `clipfx_test_${process.pid}_${Math.random().toString(36).slice(2, 8)}`;
-  // Set TEST_D1=1 to run it through the D1 driver, against a local stand-in for the gateway Worker.
-  const d1 = process.env.TEST_D1 ? await startFakeD1(path.join(dataDir, 'd1.sqlite'), 'd1-secret') : null;
   const config = loadConfig({
     dataDir, rateLimits: false, logRequests: false, mediaProcessing: false, cookieSecure: false,
     storage: 'local', baseUrl: 'http://frontend.test', internalSecret: 'test-secret',
-    databaseUrl: pg || '', databaseSchema: schema, d1Url: d1 ? d1.url : '', d1Secret: d1 ? 'd1-secret' : '', ...overrides,
+    databaseUrl: pg || '', databaseSchema: schema, ...overrides,
   });
   const silent = { log() {}, warn() {}, error() {} };
   const instance = await createApp(config, { log: overrides.verbose ? console : silent });
@@ -30,7 +27,6 @@ async function startServer(overrides = {}) {
       await instance.media.idle();
       if (instance.db.dialect === 'postgres') await instance.db.run(`DROP SCHEMA ${schema} CASCADE`);
       await instance.close();
-      if (d1) await d1.stop();
       fs.rmSync(dataDir, { recursive: true, force: true });
     },
   };
@@ -105,7 +101,7 @@ function client(base) {
 }
 
 const baseFields = (extra = {}) => ({
-  title: 'Organic Light Leaks', category: 'media', license: 'cc0', visibility: 'public', rights: true,
+  title: 'Organic Light Leaks', category: 'overlays', license: 'cc0', visibility: 'public', rights: true,
   tags: 'light leak, film, warm', software: ['ae', 'pr'], description: 'Twelve light leaks.', ...extra,
 });
 

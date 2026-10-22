@@ -7,8 +7,6 @@ module.exports = {
     ['avatar_key', 'TEXT'],
     ['socials', "TEXT NOT NULL DEFAULT '{}'"],
     ['is_system', 'INTEGER NOT NULL DEFAULT 0'],
-    // Developer page settings (see page.js), as JSON.
-    ['page', "TEXT NOT NULL DEFAULT '{}'"],
   ],
   assets: [
     ['password_hash', 'TEXT'],

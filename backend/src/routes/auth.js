@@ -4,17 +4,10 @@ const { hashPassword, verifyPassword } = require('../security');
 
 const USERNAME_RE = /^[a-z0-9_]{3,24}$/;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-// Usernames double as page addresses (jane_doe -> jane-doe.clipfx.me), so infrastructure
-// hostnames are reserved too.
 const RESERVED = new Set([
   'admin', 'administrator', 'root', 'support', 'help', 'moderator', 'mod', 'staff', 'system', 'clipfx', 'official',
   'upload', 'uploads', 'browse', 'login', 'logout', 'signup', 'settings', 'dashboard', 'saved', 'about', 'api', 'static',
   'null', 'undefined', 'anonymous', 'everyone', 'team',
-  'www', 'mail', 'email', 'smtp', 'imap', 'ftp', 'ns1', 'ns2', 'mx', 'cdn', 'assets', 'media', 'image', 'images', 'img',
-  'video', 'videos', 'audio', 'download', 'downloads', 'music', 'files', 'file', 'mcp', 'autoclip', 'app', 'apps', 'docs',
-  'developer', 'developers', 'dev', 'status', 'blog', 'news', 'auth', 'oauth', 'sso', 'id', 'account', 'accounts', 'billing',
-  'pay', 'payments', 'shop', 'store', 'staging', 'test', 'beta', 'preview', 'internal', 'send', 'feedback', 'security',
-  'legal', 'privacy', 'terms', 'abuse', 'noreply', 'no_reply', 'webmaster', 'hostmaster', 'postmaster', 'analytics', 'stats',
 ]);
 
 function validatePassword(pw) {
@@ -23,7 +16,7 @@ function validatePassword(pw) {
   return null;
 }
 
-// A free username based on someone's Google/GitHub name or email, e.g. "jane_doe" or "jane_doe2".
+// A free username based on someone's Google name or email, e.g. "jane_doe" or "jane_doe2".
 async function pickUsername(models, ...candidates) {
   let base = '';
   for (const c of candidates) {
@@ -31,7 +24,7 @@ async function pickUsername(models, ...candidates) {
       .replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 20);
     if (base.length >= 3) break;
   }
-  if (base.length < 3) base = 'maker';
+  if (base.length < 3) base = 'editor';
   for (let i = 0; i < 50; i++) {
     const name = i ? `${base.slice(0, 20)}${i + 1}` : base;
     if (!RESERVED.has(name) && USERNAME_RE.test(name) && !(await models.users.byUsername(name))) return name;
@@ -108,7 +101,7 @@ module.exports = function authRoutes(app, ctx) {
     return res.ok({ user: await ctx.publicUser(user, { self: true }) });
   });
 
-  // ---- Sign in with Google or GitHub --------------------------------------------------
+  // ---- Sign in with Google or TikTok --------------------------------------------------
   // The website asks for a sign-in URL, keeps state (+ verifier) in a short-lived cookie, sends the
   // visitor to the provider, checks the state when they come back and hands the code to
   // POST /api/auth/:provider. Signed in already? The provider gets connected to that account.
@@ -147,44 +140,34 @@ module.exports = function authRoutes(app, ctx) {
         return { subject: claims.sub, email, name: claims.name, hints: [email.split('@')[0], claims.name] };
       },
     },
-    // GitHub OAuth App. The address comes from /user/emails (primary and verified only), so a
-    // GitHub sign-in can be matched to an existing account with the same address.
-    github: {
-      label: 'GitHub',
-      ready: () => !!(config.github.clientId && config.github.clientSecret),
-      authorizeUrl(req, state, verifier) {
-        const g = config.github;
-        return `${g.authUrl}?${new URLSearchParams({
-          client_id: g.clientId, redirect_uri: callbackUri(req, 'github'), scope: 'read:user user:email', state, allow_signup: 'true',
-          code_challenge: crypto.createHash('sha256').update(verifier).digest('base64url'), code_challenge_method: 'S256',
+    // TikTok Login Kit (web). TikTok never shares an email address, so TikTok sign-ins can't be
+    // matched to existing accounts; people connect TikTok from settings instead.
+    tiktok: {
+      label: 'TikTok',
+      ready: () => !!(config.tiktok.clientKey && config.tiktok.clientSecret),
+      authorizeUrl(req, state) {
+        const t = config.tiktok;
+        return `${t.authUrl}?${new URLSearchParams({
+          client_key: t.clientKey, response_type: 'code', scope: 'user.info.basic', redirect_uri: callbackUri(req, 'tiktok'), state,
         })}`;
       },
-      async identify(req, code, verifier) {
-        const g = config.github;
-        const r = await postForm(g.tokenUrl, {
-          client_id: g.clientId, client_secret: g.clientSecret, code, code_verifier: verifier, redirect_uri: callbackUri(req, 'github'),
+      async identify(req, code) {
+        const t = config.tiktok;
+        const r = await postForm(t.tokenUrl, {
+          client_key: t.clientKey, client_secret: t.clientSecret, code, grant_type: 'authorization_code', redirect_uri: callbackUri(req, 'tiktok'),
         });
-        if (!r.ok || !r.data.access_token) throw new Error(`token ${r.status} ${r.data.error || ''} ${r.data.error_description || ''}`);
-        const api = async (path) => {
-          const u = await fetch(`${g.apiUrl}${path}`, {
-            headers: { authorization: `Bearer ${r.data.access_token}`, accept: 'application/vnd.github+json', 'user-agent': config.siteName, 'x-github-api-version': '2022-11-28' },
-            signal: AbortSignal.timeout(15000),
-          });
-          if (!u.ok) throw new Error(`${path} ${u.status}`);
-          return u.json();
-        };
-        const user = await api('/user');
-        if (!user || !user.id) throw new Error('no user id');
-        let email = '';
+        if (!r.ok || !r.data.access_token || !r.data.open_id) throw new Error(`token ${r.status} ${r.data.error || ''} ${r.data.error_description || ''}`);
+        let name = '';
         try {
-          const emails = await api('/user/emails');
-          const primary = (Array.isArray(emails) ? emails : []).find((e) => e.primary && e.verified);
-          email = primary ? String(primary.email).toLowerCase() : '';
+          const u = await fetch(`${t.userUrl}?fields=open_id,display_name`, {
+            headers: { authorization: `Bearer ${r.data.access_token}` }, signal: AbortSignal.timeout(15000),
+          });
+          const info = await u.json().catch(() => ({}));
+          name = (info.data && info.data.user && info.data.user.display_name) || '';
         } catch (err) {
-          ctx.log.warn(`[github] emails failed: ${err.message}`);
+          ctx.log.warn(`[tiktok] user info failed: ${err.message}`);
         }
-        if (/@users\.noreply\.github\.com$/.test(email)) email = '';
-        return { subject: String(user.id), email, name: user.name || user.login, hints: [user.login, user.name, email.split('@')[0]] };
+        return { subject: r.data.open_id, email: '', name, hints: [name, 'tiktok_creator'] };
       },
     },
   };

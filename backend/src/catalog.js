@@ -2,83 +2,36 @@
 // Static taxonomy: categories, supported software, licenses and accepted file types.
 
 const CATEGORIES = [
-  { id: 'apps', name: 'Apps & Software', icon: 'code', hue: 200, blurb: 'Desktop, mobile and web apps, installers and portable builds.' },
-  { id: 'devtools', name: 'Developer Tools & CLIs', icon: 'sliders', hue: 150, blurb: 'Command-line tools, dev servers, debuggers and build utilities.' },
-  { id: 'plugins', name: 'Plugins & Extensions', icon: 'shapes', hue: 265, blurb: 'Editor, browser and app plugins, add-ons and integrations.' },
-  { id: 'libraries', name: 'Libraries & SDKs', icon: 'box', hue: 175, blurb: 'Packages, SDKs, frameworks and API clients.' },
-  { id: 'templates', name: 'Templates & Starters', icon: 'layout', hue: 190, blurb: 'Boilerplates, starter kits, UI kits and project templates.' },
-  { id: 'scripts', name: 'Scripts & Automations', icon: 'transition', hue: 45, blurb: 'Scripts, workflows, bots and automation recipes.' },
-  { id: 'ai', name: 'AI Models & Tools', icon: 'sparkles', hue: 290, blurb: 'Models, weights, prompts, agents and AI-powered tools.' },
-  { id: 'games', name: 'Games & Mods', icon: 'cube', hue: 330, blurb: 'Games, mods, maps and game-dev assets.' },
-  { id: 'design', name: 'Design Assets', icon: 'palette', hue: 25, blurb: 'Icons, fonts, mockups, textures, 3D models and design files.' },
-  { id: 'media', name: 'Media & Audio', icon: 'film', hue: 210, blurb: 'Video, sound effects, music, LUTs and creative packs.' },
-  { id: 'docs', name: 'Docs & Guides', icon: 'image', hue: 100, blurb: 'Documentation, e-books, cheat sheets and courses.' },
-  { id: 'other', name: 'Other', icon: 'box', hue: 240, blurb: 'Everything else.' },
+  { id: 'footage', name: 'Stock Footage', icon: 'film', hue: 210, blurb: 'B-roll, establishing shots, slow motion and drone clips.' },
+  { id: 'transitions', name: 'Transitions', icon: 'transition', hue: 265, blurb: 'Whips, zooms, glitches, swipes and seamless cuts.' },
+  { id: 'overlays', name: 'Overlays & VFX', icon: 'sparkles', hue: 25, blurb: 'Light leaks, film grain, dust, smoke, fire and flares.' },
+  { id: 'luts', name: 'LUTs & Color', icon: 'palette', hue: 330, blurb: 'Creative looks, film emulations and conversion LUTs.' },
+  { id: 'templates', name: 'Project Templates', icon: 'layout', hue: 190, blurb: 'Ready-to-edit After Effects, Premiere, Resolve and FCP projects.' },
+  { id: 'motion', name: 'Motion Graphics', icon: 'shapes', hue: 150, blurb: 'Titles, lower thirds, shape packs and callouts.' },
+  { id: 'presets', name: 'Presets & MOGRTs', icon: 'sliders', hue: 45, blurb: 'Animation presets, effect stacks and motion graphics templates.' },
+  { id: 'sfx', name: 'Sound Effects', icon: 'wave', hue: 0, blurb: 'Whooshes, risers, hits, UI sounds, foley and ambience.' },
+  { id: 'music', name: 'Music', icon: 'music', hue: 290, blurb: 'Royalty-free beds, loops and stingers.' },
+  { id: 'textures', name: 'Textures & Stills', icon: 'image', hue: 100, blurb: 'Backgrounds, paper, film scans, mattes and HDRIs.' },
+  { id: '3d', name: '3D Assets', icon: 'cube', hue: 175, blurb: 'Models, scenes and materials for Blender, C4D and more.' },
+  { id: 'software', name: 'Software & Plugins', icon: 'code', hue: 200, blurb: 'Editing tools, plugins, scripts and extensions for Windows, Mac and Linux.' },
+  { id: 'other', name: 'Other', icon: 'box', hue: 240, blurb: 'Guides, toolkits, fonts and everything else.' },
 ];
 
-// Categories from the media-library days. Old links and stored products map onto the new ones.
-const LEGACY_CATEGORIES = {
-  footage: 'media', transitions: 'media', overlays: 'media', luts: 'media', motion: 'media', sfx: 'media', music: 'media',
-  presets: 'templates', textures: 'design', '3d': 'design', software: 'apps',
-};
-
-// Platforms a product runs on (stored in the "software" column). Creative apps stay for older uploads.
 const SOFTWARE = [
-  { id: 'windows', name: 'Windows' },
-  { id: 'macos', name: 'macOS' },
-  { id: 'linux', name: 'Linux' },
-  { id: 'web', name: 'Web' },
-  { id: 'ios', name: 'iOS' },
-  { id: 'android', name: 'Android' },
-  { id: 'node', name: 'Node.js' },
-  { id: 'python', name: 'Python' },
-  { id: 'docker', name: 'Docker' },
-  { id: 'vscode', name: 'VS Code' },
-  { id: 'jetbrains', name: 'JetBrains IDEs' },
-  { id: 'chrome', name: 'Chrome' },
-  { id: 'firefox', name: 'Firefox' },
-  { id: 'figma', name: 'Figma' },
-  { id: 'unity', name: 'Unity' },
-  { id: 'unreal', name: 'Unreal Engine' },
-  { id: 'blender', name: 'Blender' },
   { id: 'ae', name: 'After Effects' },
   { id: 'pr', name: 'Premiere Pro' },
   { id: 'resolve', name: 'DaVinci Resolve' },
   { id: 'fcp', name: 'Final Cut Pro' },
   { id: 'motion', name: 'Apple Motion' },
+  { id: 'blender', name: 'Blender' },
   { id: 'c4d', name: 'Cinema 4D' },
   { id: 'capcut', name: 'CapCut' },
   { id: 'vegas', name: 'Vegas Pro' },
   { id: 'ps', name: 'Photoshop' },
-  { id: 'any', name: 'Any platform' },
+  { id: 'any', name: 'Any editor' },
 ];
 
 const LICENSES = [
-  {
-    id: 'mit', name: 'MIT License', short: 'MIT', url: 'https://opensource.org/license/mit',
-    attribution: true, commercial: true, shareAlike: false,
-    summary: 'Use, change and ship it anywhere, including commercially. Keep the copyright notice.',
-  },
-  {
-    id: 'apache-2.0', name: 'Apache License 2.0', short: 'Apache-2.0', url: 'https://www.apache.org/licenses/LICENSE-2.0',
-    attribution: true, commercial: true, shareAlike: false,
-    summary: 'Use, change and ship it anywhere. Keep the notices and note your changes; includes a patent grant.',
-  },
-  {
-    id: 'gpl-3.0', name: 'GNU GPL v3', short: 'GPL-3.0', url: 'https://www.gnu.org/licenses/gpl-3.0.html',
-    attribution: true, commercial: true, shareAlike: true,
-    summary: 'Use and change it freely; anything you distribute that builds on it must be GPL too, with source.',
-  },
-  {
-    id: 'bsd-3', name: 'BSD 3-Clause', short: 'BSD-3', url: 'https://opensource.org/license/bsd-3-clause',
-    attribution: true, commercial: true, shareAlike: false,
-    summary: 'Use it anywhere. Keep the notice and don’t use the author’s name to promote your product.',
-  },
-  {
-    id: 'proprietary', name: 'Proprietary (free download)', short: 'Proprietary', url: '/licenses#proprietary',
-    attribution: false, commercial: true, shareAlike: false, noResale: true,
-    summary: 'Free to download and use as the developer intends. All other rights reserved; see the product’s own terms.',
-  },
   {
     id: 'cc0', name: 'CC0 1.0 (Public Domain)', short: 'CC0', url: 'https://creativecommons.org/publicdomain/zero/1.0/',
     attribution: false, commercial: true, shareAlike: false,
@@ -161,22 +114,6 @@ const FILE_TYPES = {
   exe: { kind: 'software' }, msi: { kind: 'software' }, dmg: { kind: 'software' }, pkg: { kind: 'software' },
   appimage: { kind: 'software' }, deb: { kind: 'software' }, rpm: { kind: 'software' }, apk: { kind: 'software' },
   zxp: { kind: 'software' }, aex: { kind: 'software' }, ofx: { kind: 'software' }, jsx: { kind: 'software' }, jsxbin: { kind: 'software' },
-  msix: { kind: 'software' }, appx: { kind: 'software' }, ipa: { kind: 'software' }, aab: { kind: 'software' }, xapk: { kind: 'software' },
-  snap: { kind: 'software' }, flatpak: { kind: 'software' }, app: { kind: 'software' },
-  // packages & extensions
-  vsix: { kind: 'package' }, crx: { kind: 'package' }, xpi: { kind: 'package' }, whl: { kind: 'package' }, jar: { kind: 'package' },
-  war: { kind: 'package' }, nupkg: { kind: 'package' }, gem: { kind: 'package' }, wasm: { kind: 'package' }, unitypackage: { kind: 'package' },
-  // scripts & source
-  sh: { kind: 'code' }, ps1: { kind: 'code' }, bat: { kind: 'code' }, py: { kind: 'code' }, js: { kind: 'code' }, ts: { kind: 'code' },
-  lua: { kind: 'code' }, rb: { kind: 'code' }, go: { kind: 'code' }, rs: { kind: 'code' }, sql: { kind: 'code' }, ipynb: { kind: 'code' },
-  yml: { kind: 'code' }, yaml: { kind: 'code' }, toml: { kind: 'code' },
-  // AI models
-  gguf: { kind: 'ai' }, safetensors: { kind: 'ai' }, onnx: { kind: 'ai' }, pt: { kind: 'ai' }, ckpt: { kind: 'ai' }, tflite: { kind: 'ai' },
-  // more archives, design and docs
-  tar: { kind: 'archive' }, gz: { kind: 'archive' }, tgz: { kind: 'archive' }, bz2: { kind: 'archive' }, xz: { kind: 'archive' },
-  zst: { kind: 'archive' }, iso: { kind: 'archive' },
-  fig: { kind: 'design' }, sketch: { kind: 'design' }, xd: { kind: 'design' }, woff: { kind: 'font' }, woff2: { kind: 'font' },
-  md: { kind: 'document' }, epub: { kind: 'document' }, csv: { kind: 'document' },
 };
 
 const KINDS = {
@@ -191,10 +128,6 @@ const KINDS = {
   archive: { name: 'Archive', icon: 'box' },
   document: { name: 'Document', icon: 'file' },
   software: { name: 'Software', icon: 'code' },
-  package: { name: 'Package / extension', icon: 'box' },
-  code: { name: 'Script / source', icon: 'code' },
-  ai: { name: 'AI model', icon: 'sparkles' },
-  design: { name: 'Design file', icon: 'palette' },
 };
 
 // Separate preview / thumbnail uploads are limited to formats every browser can show.
@@ -203,8 +136,8 @@ const THUMB_EXTS = ['png', 'jpg', 'jpeg', 'webp', 'gif'];
 
 // Suggested category when a file is picked (used client side).
 const KIND_CATEGORY = {
-  video: 'media', audio: 'media', image: 'design', lut: 'media', project: 'templates', preset: 'templates', model: 'design',
-  font: 'design', archive: 'other', document: 'docs', software: 'apps', package: 'plugins', code: 'scripts', ai: 'ai', design: 'design',
+  video: 'footage', audio: 'sfx', image: 'textures', lut: 'luts', project: 'templates',
+  preset: 'presets', model: '3d', font: 'other', archive: 'other', document: 'other', software: 'software',
 };
 
 const byId = (list) => Object.fromEntries(list.map((x) => [x.id, x]));
@@ -212,15 +145,12 @@ const CATEGORY_MAP = byId(CATEGORIES);
 const SOFTWARE_MAP = byId(SOFTWARE);
 const LICENSE_MAP = byId(LICENSES);
 
-// A category id from a form or link, with the old media-library ids mapped onto the new ones.
-const normalizeCategory = (id) => (CATEGORY_MAP[id] ? id : LEGACY_CATEGORIES[id] || '');
-
 function extOf(filename) {
   const m = /\.([a-z0-9]{1,10})$/i.exec(String(filename || ''));
   return m ? m[1].toLowerCase() : '';
 }
 
 module.exports = {
-  CATEGORIES, LEGACY_CATEGORIES, SOFTWARE, LICENSES, FILE_TYPES, KINDS, PREVIEW_EXTS, THUMB_EXTS, KIND_CATEGORY,
-  CATEGORY_MAP, SOFTWARE_MAP, LICENSE_MAP, extOf, normalizeCategory,
+  CATEGORIES, SOFTWARE, LICENSES, FILE_TYPES, KINDS, PREVIEW_EXTS, THUMB_EXTS, KIND_CATEGORY,
+  CATEGORY_MAP, SOFTWARE_MAP, LICENSE_MAP, extOf,
 };

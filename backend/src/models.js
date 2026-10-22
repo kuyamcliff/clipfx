@@ -145,20 +145,6 @@ function createModels(db, { storage }) {
     },
     setAvatar: (id, key) => run('UPDATE users SET avatar_key = ? WHERE id = ?', key || null, id),
     setSocials: (id, socials) => run('UPDATE users SET socials = ? WHERE id = ?', JSON.stringify(socials || {}), id),
-    setPage: (id, page) => run('UPDATE users SET page = ? WHERE id = ?', JSON.stringify(page || {}), id),
-    // Downloads of a developer's products per day (last `days` days) and the products with the most.
-    async downloadStats(id, days = 30) {
-      const since = today() - days + 1;
-      const perDay = await many(`SELECT d.day, SUM(d.count) AS n FROM daily_downloads d JOIN assets a ON a.id = d.asset_id
-        WHERE a.user_id = ? AND d.day >= ? GROUP BY d.day ORDER BY d.day`, id, since);
-      const top = await many(`SELECT a.slug, a.title, SUM(d.count) AS n FROM daily_downloads d JOIN assets a ON a.id = d.asset_id
-        WHERE a.user_id = ? AND d.day >= ? GROUP BY a.id, a.slug, a.title ORDER BY n DESC LIMIT 10`, id, since);
-      const byDay = new Map(perDay.map((r) => [Number(r.day), Number(r.n)]));
-      return {
-        days: Array.from({ length: days }, (_, i) => ({ date: new Date((since + i) * DAY).toISOString().slice(0, 10), downloads: byDay.get(since + i) || 0 })),
-        top: top.map((r) => ({ slug: r.slug, title: r.title, downloads: Number(r.n) })),
-      };
-    },
     // Most downloaded creators, for the home page.
     topCreators: (limit = 8) => many(`SELECT u.id, u.username, u.display_name, u.avatar_key,
         COUNT(a.id) AS uploads, COALESCE(SUM(a.downloads), 0) AS downloads
@@ -334,14 +320,6 @@ function createModels(db, { storage }) {
       }
     },
     rowBySlug: (slug) => one(`${SELECT_ASSET} WHERE a.slug = ?`, String(slug)),
-    // Public products picked for a developer page, in the order chosen.
-    async featured(userId, slugs) {
-      if (!slugs || !slugs.length) return [];
-      const rows = await many(`${SELECT_ASSET} WHERE a.user_id = ? AND a.slug IN (${slugs.map(() => '?').join(', ')}) AND ${PUBLIC_ASSET_SQL}`, userId, ...slugs);
-      const items = await serializeAll(rows);
-      return slugs.map((s) => items.find((i) => i.slug === s)).filter(Boolean);
-    },
-    ownSlugs: async (userId) => new Set((await many('SELECT slug FROM assets WHERE user_id = ?', userId)).map((r) => r.slug)),
     rawById: (id) => one('SELECT * FROM assets WHERE id = ?', id),
     update: (id, v) => run(`UPDATE assets SET title = ?, description = ?, category = ?, software = ?, tags = ?, license = ?, visibility = ?, updated_at = ?
       WHERE id = ?`, v.title, v.description, v.category, listToField(v.software), listToField(v.tags), v.license, v.visibility, Date.now(), id),

@@ -71,12 +71,9 @@ const ICONS = {
   vimeo: '<path d="M3 8.5c3-2.5 4.5-3.5 5.5-1.5 1 2.2 1.5 8 3 8s4.5-4.5 5-6.5c.5-2.5-1.5-3-3-2 1-4.5 7.5-4.5 6.5 0-1 4-6.5 11.5-9 11.5-2.7 0-3-8.5-4.5-8.5-.5 0-1.5.7-2.5 1.5"/>',
   behance: '<path d="M3.5 6.5h5a2.8 2.8 0 0 1 0 5.5h-5zM3.5 12h5.5a3 3 0 0 1 0 6H3.5zM14.5 14.5h6.5a3.3 3.3 0 1 0-1 2.8M15 7.5h4.5"/>',
   artstation: '<path d="M3 16.5 9.5 5h5l6.5 11.5-2.5 3.5zM3 16.5h11.5M8.5 13l3.5-6"/>',
-  gitlab: '<path d="m12 20.5-8.6-6.3a.9.9 0 0 1-.3-1L5.3 6a.4.4 0 0 1 .8 0L8 11.5h8L17.9 6a.4.4 0 0 1 .8 0l2.2 7.2a.9.9 0 0 1-.3 1z"/>',
-  linkedin: '<rect x="3.5" y="3.5" width="17" height="17" rx="3"/><path d="M8 10.5v6M8 7.5v.01M11.5 16.5v-6M11.5 13c0-1.5 1-2.5 2.5-2.5s2.5 1 2.5 2.5v3.5"/>',
   discord: '<path d="M7.5 6.5c3-1.3 6-1.3 9 0 1.8 2.5 2.8 5.6 2.7 9.5-1.5 1.2-3.1 2-4.7 2.5l-1-1.8M7.5 6.5C5.7 9 4.7 12.1 4.8 16c1.5 1.2 3.1 2 4.7 2.5l1-1.8M8 15.5c2.6 1.3 5.4 1.3 8 0"/><circle cx="9.5" cy="12" r="1.2"/><circle cx="14.5" cy="12" r="1.2"/>',
 };
 const FILLED = {
-  github: '<path d="M12 .3a12 12 0 0 0-3.8 23.38c.6.12.83-.26.83-.57l-.02-2.04c-3.34.72-4.04-1.61-4.04-1.61-.55-1.39-1.33-1.76-1.33-1.76-1.09-.74.08-.73.08-.73 1.2.09 1.84 1.24 1.84 1.24 1.07 1.83 2.8 1.3 3.49 1 .1-.78.42-1.3.76-1.6-2.67-.3-5.47-1.33-5.47-5.93 0-1.31.47-2.38 1.24-3.22-.14-.3-.54-1.52.1-3.18 0 0 1-.32 3.3 1.23a11.5 11.5 0 0 1 6 0c2.28-1.55 3.29-1.23 3.29-1.23.64 1.66.24 2.88.12 3.18a4.65 4.65 0 0 1 1.23 3.22c0 4.61-2.8 5.63-5.48 5.92.42.36.81 1.1.81 2.22l-.01 3.29c0 .31.21.69.82.57A12 12 0 0 0 12 .3"/>',
   tiktok: '<path d="M12.53.02C13.84 0 15.14.01 16.44 0c.08 1.53.63 3.09 1.75 4.17 1.12 1.11 2.7 1.62 4.24 1.79v4.03c-1.44-.05-2.89-.35-4.2-.97-.57-.26-1.1-.59-1.62-.93-.01 2.92.01 5.84-.02 8.75-.08 1.4-.54 2.79-1.35 3.94-1.31 1.92-3.58 3.17-5.91 3.21-1.43.08-2.86-.31-4.08-1.03-2.02-1.19-3.44-3.37-3.65-5.71-.02-.5-.03-1-.01-1.49.18-1.9 1.12-3.72 2.58-4.96 1.66-1.44 3.98-2.13 6.15-1.72.02 1.48-.04 2.96-.04 4.44-.99-.32-2.15-.23-3.02.37-.63.41-1.11 1.04-1.36 1.75-.21.51-.15 1.07-.14 1.61.24 1.64 1.82 3.02 3.5 2.87 1.12-.01 2.19-.66 2.77-1.61.19-.33.4-.67.41-1.06.1-1.79.06-3.57.07-5.36.01-4.03-.01-8.05.02-12.07z"/>',
   x: '<path d="M18.9 1.15h3.68l-8.04 9.19L24 22.85h-7.4l-5.8-7.58-6.64 7.58H.47l8.6-9.83L0 1.15h7.6l5.24 6.93zm-1.29 19.5h2.04L6.49 3.24H4.3z"/>',
 };
@@ -93,11 +90,8 @@ const mark = () => raw('<img class="mark" src="/static/brand/logo.png" alt="" wi
 const hue = (category) => raw(`style="--h:${Number(category && category.hue) || 220}"`);
 
 // Background photo for each category (CC0, see the About page). Unknown ids fall back to "other".
-const CATEGORY_PHOTOS = {
-  apps: 'software', devtools: 'software', plugins: 'presets', libraries: '3d', templates: 'templates', scripts: 'motion',
-  ai: 'overlays', games: '3d', design: 'textures', media: 'footage', docs: 'other', other: 'other',
-};
-const categoryPhoto = (category) => `/static/img/cat-${CATEGORY_PHOTOS[category && category.id] || 'other'}.webp`;
+const CATEGORY_PHOTOS = new Set(['footage', 'transitions', 'overlays', 'luts', 'templates', 'motion', 'presets', 'sfx', 'music', 'textures', '3d', 'software', 'other']);
+const categoryPhoto = (category) => `/static/img/cat-${CATEGORY_PHOTOS.has(category && category.id) ? category.id : 'other'}.webp`;
 
 // A person's photo, or their initials on a color picked from their name.
 function avatar(user, size = '') {
