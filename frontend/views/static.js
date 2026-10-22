@@ -1,5 +1,5 @@
 'use strict';
-const { html, formatCount, formatBytes } = require('../src/html');
+const { html, formatCount } = require('../src/html');
 const { layout } = require('./layout');
 const { icon, notice } = require('./components');
 
@@ -18,12 +18,18 @@ const PAGES = {
         <div><dt>Creators</dt><dd>${formatCount(stats.creators)}</dd></div>
       </dl>` : ''}
       <p>Most editors have a folder of things they built once: light leaks, a pack of whooshes, a LUT that got a look right, a lower third they keep reusing. ${c.siteName} is a place to put them so other people can use them too. Upload a file, choose a license, send people the link. They can download it without making an account.</p>
-      <h2>How it's run</h2>
-      <p>It's a nonprofit project run by volunteers. There's no paid tier, nothing behind a paywall, no ads and no analytics. The only real costs are storage and bandwidth, and <a href="/donate">donations</a> cover them. The code is <a href="${c.sourceUrl}">open source</a>, so anyone can see how it works or run their own copy.</p>
+      <h2>The company</h2>
+      <p>${c.siteName} is an early-stage startup building the go-to library for video editing resources: footage, transitions, overlays, LUTs, templates, sound effects, fonts and plugins in one searchable place. Uploading and downloading are free for creators, with no ads and no analytics. The code is <a href="${c.sourceUrl}">open source</a>, so anyone can see how it works.</p>
+      <h2>What we're building</h2>
+      <ul>
+        <li><strong>A creator library.</strong> Upload a file, choose a license, share the link. Previews and thumbnails are generated automatically.</li>
+        <li><strong>AI-native access.</strong> An <a href="/developers/mcp">MCP server</a> lets Claude and other AI assistants search, download and upload files for a signed-in user, and a public <a href="/developers">API</a> serves apps and scripts.</li>
+        <li><strong>Global delivery.</strong> Files are stored on Cloudflare R2 and served worldwide.</li>
+      </ul>
       <h2>Who owns what</h2>
       <p>Uploaders keep the rights to their work. They pick the license, and each asset page spells out what you can do with it. The <a href="/licenses">licenses page</a> compares them.</p>
-      <h2>Helping out</h2>
-      <p>Upload something useful, <a href="/guidelines">report</a> anything that breaks the rules, send a pull request, or get in touch at ${contact(c)}.</p>
+      <h2>Get in touch</h2>
+      <p>For partnerships, press, support or anything else, see the <a href="/contact">contact page</a> or reach us at ${contact(c)}.</p>
       <h2>Photos</h2>
       <p>The background photos on this site are public domain (CC0) from <a href="https://stocksnap.io" rel="noopener">StockSnap</a>, <a href="https://www.rawpixel.com/category/53/public-domain" rel="noopener">rawpixel</a> and the <a href="https://wordpress.org/photos/" rel="noopener">WordPress Photo Directory</a>, by Olu Eletu, Thong Vo, Jesse Collins, Ian Livesey, Suvan Chowdhury, Nathan Engel, Michael Mongin and others. Thank you.</p>`,
   },
@@ -88,7 +94,7 @@ const PAGES = {
 
   terms: {
     title: 'Terms of use',
-    lead: (c) => `Be decent, only upload what you're allowed to, and understand that ${c.siteName} is a volunteer service provided as is.`,
+    lead: (c) => `Be decent, only upload what you're allowed to, and understand that ${c.siteName} is provided as is.`,
     body: (c) => html`
       <h2>Your account</h2>
       <p>You're responsible for what happens on your account. You need to be old enough to accept these terms where you live (13 or older in most places).</p>
@@ -102,7 +108,7 @@ const PAGES = {
       <h2>Moderation</h2>
       <p>Content or accounts that break these terms may be removed.</p>
       <h2>No warranty</h2>
-      <p>The service is provided as is. To the extent the law allows, ${c.siteName} and its volunteers aren't liable for damages from using it.</p>
+      <p>The service is provided as is. To the extent the law allows, ${c.siteName} and its team aren't liable for damages from using it.</p>
       <h2>Changes</h2>
       <p>These terms may change. Big changes will be announced on the site. Questions: ${contact(c)}.</p>`,
   },
@@ -138,7 +144,7 @@ const PAGES = {
         <li>Pick <strong>Copyright infringement</strong> or <strong>Paid or leaked asset</strong>.</li>
         <li>Link to your original, say that you own the rights or act for the owner, and leave an email address.</li>
       </ol>
-      <p>Or email ${contact(c)} with the same information and the asset link. Moderators are volunteers and usually act within a few days. Infringing files are removed and blocked from being uploaded again.</p>
+      <p>Or email ${contact(c)} with the same information and the asset link. Moderators usually act within a few days. Infringing files are removed and blocked from being uploaded again.</p>
       <h2>Formal (DMCA) notices</h2>
       <p>Include your physical or electronic signature, the work being infringed, the URL of the material, your contact details, a statement that you believe in good faith the use isn't authorized, and a statement under penalty of perjury that the notice is accurate and you're authorized to act for the owner.</p>
       <h2>Counter-notices</h2>
@@ -176,23 +182,18 @@ const PAGES = {
     },
   },
 
-  donate: {
-    title: 'Donate',
-    lead: (c) => `${c.siteName} has no ads and no paid tier. Donations pay for storage and bandwidth, and nothing else.`,
-    body: (c, stats) => html`
-      ${stats ? html`<dl class="factrow">
-        <div><dt>Stored</dt><dd>${formatBytes(stats.bytes)}</dd></div>
-        <div><dt>Downloads served</dt><dd>${formatCount(stats.downloads)}</dd></div>
-      </dl>` : ''}
-      ${c.donateUrl ? html`<p><a class="btn btn-accent btn-lg" href="/donate/go" rel="noopener">Donate</a></p>`
-    : notice('', html`Donations aren't set up on this instance yet. The operator can turn them on with <code>DONATE_URL</code>.`)}
-      <p>Volunteers aren't paid. Anything left over after hosting goes into more storage.</p>
-      <h2>Other ways to help</h2>
+  contact: {
+    title: 'Contact',
+    lead: (c) => `How to reach the ${c.siteName} team.`,
+    body: (c) => html`
+      <h2>Email</h2>
+      <p>${contact(c)}. We read everything and usually reply within a couple of days.</p>
+      <h2>What to contact us about</h2>
       <ul>
-        <li><strong>Upload.</strong> The library is only as good as what people put in it.</li>
-        <li><strong>Report problems.</strong> Leaked packs, malware and broken files make the whole place less trustworthy.</li>
-        <li><strong>Credit creators</strong> in your video descriptions, even when the license doesn't require it.</li>
-        <li><strong>Contribute code</strong> on <a href="${c.sourceUrl}">GitHub</a>.</li>
+        <li><strong>Partnerships and business.</strong> Integrations, distribution, investment and press.</li>
+        <li><strong>Support.</strong> Problems with your account, uploads or downloads.</li>
+        <li><strong>Copyright.</strong> Use the <a href="/copyright">takedown process</a> so the request is handled fastest.</li>
+        <li><strong>Developers.</strong> See the <a href="/developers">API and MCP docs</a>, or open an issue on <a href="${c.sourceUrl}">GitHub</a>.</li>
       </ul>`,
   },
 };

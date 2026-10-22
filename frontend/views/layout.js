@@ -116,18 +116,18 @@ function layout(ctx, { title, description, body, og = {}, noindex = false, ldJso
     <div class="container footer-in">
       <div class="footer-brand">
         <a class="brand" href="/">${mark()}<span>${config.siteName}</span></a>
-        <p>Find all resources for video editing. A free, nonprofit library run by volunteers. Uploads belong to their creators and are shared under the license on each page.</p>
+        <p>Find all resources for video editing, free for creators. Uploads belong to their creators and are shared under the license on each page.</p>
       </div>
       <nav class="footer-cols" aria-label="Footer">
         <div><p class="footer-h">Library</p>
           <a href="/browse">Explore</a><a href="/browse?sort=trending">Trending</a><a href="/upload">Upload</a><a href="/licenses">Licenses</a></div>
         <div><p class="footer-h">Project</p>
-          <a href="/about">About</a><a href="/donate">Donate</a><a href="/developers">API</a><a href="${config.sourceUrl}" rel="noopener">Source code</a></div>
+          <a href="/about">About</a><a href="/contact">Contact</a><a href="/developers">API</a><a href="${config.sourceUrl}" rel="noopener">Source code</a></div>
         <div><p class="footer-h">Rules</p>
           <a href="/guidelines">Guidelines</a><a href="/copyright">Takedowns</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></div>
       </nav>
     </div>
-    <div class="container footer-bottom"><span>© ${new Date().getFullYear()} ${config.siteName}</span><span>Nonprofit and open source</span></div>
+    <div class="container footer-bottom"><span>© ${new Date().getFullYear()} ${config.siteName}</span><span>Open source</span></div>
   </footer>
 
   <nav class="tabbar" aria-label="Quick">

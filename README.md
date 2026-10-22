@@ -2,7 +2,7 @@
 
 # ClipFX
 
-**A free, nonprofit library where video editors and motion designers share assets with each other.**
+**A free library where video editors and motion designers share assets with each other.**
 
 Upload footage, transitions, overlays, LUTs, project templates, MOGRTs, sound effects, music, textures and 3D files, pick a clear license, and share one short link. Anyone can download, no account needed. No ads, no paywalls, no tracking.
 
