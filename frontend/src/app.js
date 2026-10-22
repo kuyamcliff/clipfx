@@ -10,12 +10,12 @@ const { createMcp } = require('./mcp');
 const { createOAuth } = require('./oauth');
 const { buildCatalog, decorate, decorateAll, withCounts } = require('./decorate');
 
-const STATIC_PAGES = ['about', 'guidelines', 'licenses', 'terms', 'privacy', 'copyright', 'donate', 'developers'];
+const STATIC_PAGES = ['about', 'guidelines', 'licenses', 'terms', 'privacy', 'copyright', 'contact', 'developers'];
 const META_TTL = 5 * 60 * 1000;
 
 // Used only when the API can't be reached, so error pages still render.
 const FALLBACK_META = {
-  config: { siteName: 'ClipFX', sourceUrl: 'https://github.com/kuyamcliff/clipfx', donateUrl: '', contactEmail: '', storageOrigin: '' },
+  config: { siteName: 'ClipFX', sourceUrl: 'https://github.com/kuyamcliff/clipfx', donateUrl: '', contactEmail: 'info@clipfx.me', storageOrigin: '' },
   catalog: { categories: [], software: [], licenses: [], kinds: {}, fileTypes: {}, previewExts: [], thumbExts: [], kindCategory: {} },
 };
 
@@ -599,14 +599,12 @@ function createFrontend(config, { log = console } = {}) {
 
   for (const page of STATIC_PAGES) {
     app.get(`/${page}`, async (req, res) => {
-      const stats = page === 'about' || page === 'donate' ? (await req.api('GET', '/api/stats')).data.stats : null;
+      const stats = page === 'about' ? (await req.api('GET', '/api/stats')).data.stats : null;
       return res.view(views.staticPage, { page, stats });
     });
   }
-  app.get('/donate/go', async (req, res) => {
-    const m = await getMeta(req);
-    return m.config.donateUrl ? res.redirect(m.config.donateUrl) : res.redirect('/donate');
-  });
+  // The donation page was replaced by the contact page; keep old links working.
+  app.get(['/donate', '/donate/go'], (req, res) => res.redirect(301, '/contact'));
 
   // Open to every search engine and AI crawler. Named AI agents share the same rules as everyone,
   // listed so it's explicit they're welcome. Private areas and actions stay out.
@@ -631,7 +629,7 @@ function createFrontend(config, { log = console } = {}) {
     res.setHeader('Cache-Control', 'public, max-age=3600');
     res.type('text/plain').send(`# ${m.config.siteName}
 
-> ${m.config.siteName} is a free, nonprofit library of video editing resources: stock footage, transitions, overlays and VFX, LUTs, project templates, motion graphics, presets and MOGRTs, sound effects, music, textures and 3D assets. Anyone can browse and download without an account. Every asset shows its license.
+> ${m.config.siteName} is a free library of video editing resources: stock footage, transitions, overlays and VFX, LUTs, project templates, motion graphics, presets and MOGRTs, sound effects, music, textures and 3D assets. Anyone can browse and download without an account. Every asset shows its license.
 
 ## Pages
 - [Home](${origin}/): search and featured resources

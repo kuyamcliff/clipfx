@@ -103,7 +103,7 @@ const opts = { skip: !haveBackend && 'backend dependencies not installed (run np
 
 test('pages render with security headers', opts, async () => {
   const b = browser();
-  for (const p of ['/', '/browse', '/about', '/guidelines', '/licenses', '/terms', '/privacy', '/copyright', '/donate', '/login', '/signup']) {
+  for (const p of ['/', '/browse', '/about', '/guidelines', '/licenses', '/terms', '/privacy', '/copyright', '/contact', '/login', '/signup']) {
     const res = await b.get(p);
     assert.equal(res.status, 200, p);
     assert.match(res.headers.get('content-security-policy'), /default-src 'self'/);

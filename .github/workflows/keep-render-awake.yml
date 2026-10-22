@@ -1,0 +1,19 @@
+# Pings the Render API every 10 minutes so the free instance doesn't sleep
+# (Render sleeps free services after 15 minutes without traffic).
+name: Keep Render awake
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Ping /healthz
+        run: |
+          # A sleeping instance can take ~1 minute to wake, so allow retries.
+          curl -fsS --retry 3 --retry-delay 10 --retry-all-errors --max-time 90 https://api.clipfx.me/healthz
+          echo

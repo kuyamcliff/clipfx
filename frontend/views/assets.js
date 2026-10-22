@@ -500,7 +500,7 @@ function report(ctx, { asset: a, reasons, values, errors }) {
       <div>
         <a class="backlink" href="${a.url}">${icon('back')}<span>${a.title}</span></a>
         <h1>Report this file</h1>
-        <p class="sub">Volunteer moderators read every report. For copyright claims, also see the <a href="/copyright">takedown policy</a>.</p>
+        <p class="sub">Moderators read every report. For copyright claims, also see the <a href="/copyright">takedown policy</a>.</p>
       </div>
     </header>
     <form method="post" action="${a.url}/report" class="panel stack">

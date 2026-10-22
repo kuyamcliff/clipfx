@@ -60,7 +60,7 @@ function loadConfig(overrides = {}) {
     multipartThreshold: num(env.MULTIPART_THRESHOLD_MB, 64) * MB,
     minPartSize: num(env.MIN_PART_MB, 16) * MB,
     donateUrl: env.DONATE_URL || '',
-    contactEmail: env.CONTACT_EMAIL || '',
+    contactEmail: env.CONTACT_EMAIL || 'info@clipfx.me',
     sourceUrl: env.SOURCE_URL || 'https://github.com/kuyamcliff/clipfx',
     adminUsernames: (env.ADMIN_USERNAMES || '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean),
     openSignups: bool(env.OPEN_SIGNUPS, true),
