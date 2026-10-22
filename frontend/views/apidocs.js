@@ -70,7 +70,7 @@ X-API-Key: cfx_your_key_here`)}
           </tbody>
         </table></div>
         <p>Public reads (searching, file pages, profiles, metadata) work with any key. Without <code>assets:read</code> or <code>profile:read</code> they simply answer as if you were logged out.</p>
-        ${notice('', html`<strong>Never available to keys</strong>, whatever their scopes: creating, listing or revoking keys, changing your password, connecting or removing Google and GitHub sign-in, and logging in or out. These always need you on the website, so a leaked key can't lock you out or make more keys.`, 'shield')}
+        ${notice('', html`<strong>Never available to keys</strong>, whatever their scopes: creating, listing or revoking keys, changing your password, connecting or removing Google and TikTok sign-in, and logging in or out. These always need you on the website, so a leaked key can't lock you out or make more keys.`, 'shield')}
 
         <h2 id="responses">Responses and errors</h2>
         <p>Success: <code>{"ok": true, ...}</code>. Failure: <code>{"ok": false, "error": "Readable message"}</code>, plus <code>"errors": {"field": "message"}</code> for validation problems.</p>

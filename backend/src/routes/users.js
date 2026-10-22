@@ -1,7 +1,6 @@
 'use strict';
 const { hashPassword, verifyPassword } = require('../security');
 const { PLATFORMS, normalizeSocial } = require('../socials');
-const { parsePage, normalizePage } = require('../page');
 
 function normalizeWebsite(input) {
   let s = String(input || '').trim();
@@ -23,11 +22,10 @@ module.exports = function userRoutes(app, ctx) {
 
   app.get('/api/users/:username', async (req, res) => {
     const profile = await models.users.byUsername(req.params.username);
-    if (!profile || profile.is_system || (profile.banned && !ctx.isAdmin(req))) return res.fail(404, 'There’s no developer with that username.');
+    if (!profile || profile.is_system || (profile.banned && !ctx.isAdmin(req))) return res.fail(404, 'There’s no creator with that username.');
     const sort = ctx.SORTS[req.query.sort] ? req.query.sort : 'new';
     res.ok({
       profile: await ctx.publicUser(profile),
-      featured: await models.assets.featured(profile.id, parsePage(profile.page).featured),
       stats: await models.users.stats(profile.id, { publicOnly: true }),
       result: await models.assets.list({ userId: profile.id, page: pageOf(req.query), sort, perPage: 24, includeBanned: true }),
       sort,
@@ -57,26 +55,6 @@ module.exports = function userRoutes(app, ctx) {
       if (a.status !== 'active') ctx.hideMedia(a);
     });
     res.ok({ result, stats: await models.users.stats(req.user.id), used: await models.users.storageUsed(req.user.id), quota: config.userQuota });
-  });
-
-  // Developer page settings (name.clipfx.me).
-  app.get('/api/me/page', requireUser, async (req, res) => {
-    res.ok({ page: parsePage(req.user.page), host: ctx.pageHost(req.user.username) });
-  });
-
-  const savePage = async (req, res) => {
-    const { value, errors } = normalizePage(req.body || {}, { ownedSlugs: await models.assets.ownSlugs(req.user.id) });
-    if (Object.keys(errors).length) return res.fail(400, 'Some fields need attention.', errors);
-    await models.users.setPage(req.user.id, value);
-    return res.ok({ page: value, host: ctx.pageHost(req.user.username), message: 'Your page is updated.' });
-  };
-  app.put('/api/me/page', requireUser, rate('page', 60, 3600 * 1000), savePage);
-  app.post('/api/me/page', requireUser, rate('page', 60, 3600 * 1000), savePage);
-
-  // Downloads of your products, per day, for the dashboard.
-  app.get('/api/me/downloads', requireUser, async (req, res) => {
-    const days = [7, 30, 90].includes(Number(req.query.days)) ? Number(req.query.days) : 30;
-    res.ok(await models.users.downloadStats(req.user.id, days));
   });
 
   app.get('/api/me/storage', requireUser, async (req, res) => {

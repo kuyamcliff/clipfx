@@ -8,7 +8,7 @@ async function main() {
 
   const server = app.listen(config.port, config.host, () => {
     console.log(`${config.siteName} API running at http://localhost:${config.port}`);
-    console.log(db.dialect === 'd1' ? 'Database: Cloudflare D1 (D1_URL)' : db.dialect === 'postgres' ? 'Database: Postgres (DATABASE_URL)' : `Database: SQLite (${config.dbFile})`);
+    console.log(db.dialect === 'postgres' ? 'Database: Postgres (DATABASE_URL)' : `Database: SQLite (${config.dbFile})`);
     console.log(storage.kind === 'r2' ? `Storage: R2 bucket "${config.r2.bucket}"` : `Storage: local disk (${config.uploadDir}). Set the R2_* variables to use Cloudflare R2.`);
     console.log(media.available ? 'ffmpeg found: thumbnails & previews will be generated.' : 'ffmpeg not found: media processing disabled (uploads still work).');
     if (!config.baseUrl) console.log('BASE_URL is not set: share links will use the request host. Set it to your frontend URL in production.');
