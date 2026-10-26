@@ -113,9 +113,9 @@ const DISCORD_MORE_TOOLS = [
   { name: "discord_get_event_subscribers", title: "List scheduled event subscribers", scope: null, annotations: READ, description: "List users subscribed to a scheduled event.", inputSchema: obj({ guild_id:str('Server ID.'), event_id:str('Scheduled event ID.'), limit:int('1–100.', {minimum:1,maximum:100}), before:str('Pagination user ID.'), with_member:{type:'boolean'} }, ["guild_id","event_id"]) },
   { name: "discord_create_poll_message", title: "Send poll", scope: null, annotations: WRITE, description: "Send a message containing a Discord poll.", inputSchema: obj({ channel_id:str('Channel ID.'), question:str('Poll question.'), answers:{type:'array',minItems:2,maxItems:10,items:{type:'object',properties:{text:{type:'string'}},required:['text']}}, duration_hours:int('Poll duration hours.', {minimum:1,maximum:768}), allow_multiselect:{type:'boolean'} }, ["channel_id","question","answers"]) },
   { name: "discord_get_message", title: "Get message", scope: null, annotations: READ, description: "Fetch one message by channel and message ID.", inputSchema: obj({ channel_id:str('Channel ID.'), message_id:str('Message ID.') }, ["channel_id","message_id"]) },
+  { name: "discord_get_bot_user", title: "Get bot identity", scope: null, annotations: READ, description: "Get the configured Discord bot's user profile.", inputSchema: obj({}) },
 ];
 
-  { name: "discord_get_bot_user", title: "Get bot identity", scope: null, annotations: READ, description: "Get the configured Discord bot's user profile.", inputSchema: obj({}) },
 const TOOLS = [
   // Library: any signed-in account.
   {
