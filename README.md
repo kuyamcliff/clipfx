@@ -34,6 +34,7 @@ Upload footage, transitions, overlays, LUTs, project templates, MOGRTs, sound ef
 - Profiles with photos and social links (YouTube, TikTok, Instagram, X, Twitch, Vimeo, Behance, ArtStation, Discord)
 - Sign in with Google or TikTok, or a username and password
 - Open to search engines and AI assistants: sitemap index, `robots.txt` that welcomes AI crawlers, `/llms.txt`, and a public JSON API documented at `/developers`
+- MCP server at `/mcp` for AI assistants, with ClipFX asset tools and optional Discord server/channel/message tools when `DISCORD_BOT_TOKEN` is configured
 - A short share link for every asset, a direct-download link, and a public or **unlisted** option
 - Upload a **new version** without breaking the link
 - In-browser thumbnail frame picker; server-side previews for ProRes/MKV/AIFF and other formats browsers can't play
@@ -95,6 +96,18 @@ You'll set up three things: an R2 bucket, the API on Render and the website on V
 3. After it deploys, open `https://<your-service>.onrender.com/healthz`. It should say `"storage":"r2","database":"postgres"`.
 
 Free Render instances sleep after 15 minutes without traffic, so the first request after that takes up to a minute. The *Starter* plan stays awake.
+
+### Optional: Discord tools for the existing MCP server
+
+The existing MCP endpoint at `/mcp` can expose Discord tools using a dedicated Discord bot. This is optional and does not create a second MCP server.
+
+1. Create a Discord application and bot in the [Discord Developer Portal](https://discord.com/developers/applications).
+2. Invite the bot only to the server(s) you want it to access. Grant the minimum permissions needed: View Channels, Read Message History, and Send Messages only if you want posting.
+3. Add the bot token as the **`DISCORD_BOT_TOKEN` environment variable on the ClipFX frontend's Vercel project**. Never put it in the browser, source code, repository, or an MCP tool argument.
+4. Redeploy the frontend. The existing `/mcp` endpoint will then expose `discord_list_servers`, `discord_list_channels`, `discord_read_messages`, `discord_send_message`, and `discord_get_server_info`.
+5. Enable Discord's Message Content privileged intent in the Developer Portal if required for reading message bodies. The bot must also have access to each requested channel.
+
+Discord actions use the bot's permissions. The MCP connection still requires normal ClipFX sign-in or an API key; Discord's bot token stays server-side. Sending a message should only happen when the user explicitly asks for it.
 
 ### 4. Vercel (website)
 
