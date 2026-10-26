@@ -100,7 +100,6 @@ const DISCORD_MORE_TOOLS = [
   { name: "discord_create_stage_instance", title: "Create stage instance", scope: null, annotations: WRITE, description: "Start a stage in a stage voice channel.", inputSchema: obj({ channel_id:str('Stage voice channel ID.'), topic:str('Stage topic.'), privacy_level:int('1 public, 2 guild-only.', {enum:[1,2]}), send_start_notification:{type:'boolean'} }, ["channel_id","topic"]) },
   { name: "discord_edit_stage_instance", title: "Edit stage instance", scope: null, annotations: WRITE, description: "Edit a stage topic or privacy level.", inputSchema: obj({ channel_id:str('Stage channel ID.'), topic:str('New topic.'), privacy_level:int('1 public, 2 guild-only.', {enum:[1,2]}) }, ["channel_id"]) },
   { name: "discord_delete_stage_instance", title: "End stage instance", scope: null, annotations: { ...WRITE, destructiveHint: true }, description: "End a live stage instance.", inputSchema: obj({ channel_id:str('Stage channel ID.') }, ["channel_id"]) },
-  { name: "discord_get_voice_states", title: "Get voice states", scope: null, annotations: READ, description: "List cached voice states for a server.", inputSchema: obj({ guild_id:str('Server ID.') }, ["guild_id"]) },
   { name: "discord_move_member_voice", title: "Move or disconnect member", scope: null, annotations: WRITE, description: "Move a member to a voice channel or disconnect them by passing an empty channel_id.", inputSchema: obj({ guild_id:str('Server ID.'), user_id:str('Member ID.'), channel_id:str('Target voice channel ID; empty disconnects.') }, ["guild_id","user_id","channel_id"]) },
   { name: "discord_list_integrations", title: "List integrations", scope: null, annotations: READ, description: "List server integrations.", inputSchema: obj({ guild_id:str('Server ID.') }, ["guild_id"]) },
   { name: "discord_list_application_commands", title: "List application commands", scope: null, annotations: READ, description: "List global or guild slash commands for an application.", inputSchema: obj({ application_id:str('Discord application ID.'), guild_id:str('Optional server ID; omit for global commands.') }, ["application_id"]) },
@@ -116,6 +115,7 @@ const DISCORD_MORE_TOOLS = [
   { name: "discord_get_message", title: "Get message", scope: null, annotations: READ, description: "Fetch one message by channel and message ID.", inputSchema: obj({ channel_id:str('Channel ID.'), message_id:str('Message ID.') }, ["channel_id","message_id"]) },
 ];
 
+  { name: "discord_get_bot_user", title: "Get bot identity", scope: null, annotations: READ, description: "Get the configured Discord bot's user profile.", inputSchema: obj({}) },
 const TOOLS = [
   // Library: any signed-in account.
   {
@@ -463,7 +463,7 @@ function createMcp({ backend, config, log = console }) {
       return { reported: true, message: d.message };
     },
     async discord_list_servers() {
-      return discordRequest('/users/@me/guilds');
+      return discordGatewayListServers();
     },
     async discord_list_channels(a) {
       return discordRequest(`/guilds/${encodeURIComponent(a.guild_id)}/channels`);
@@ -495,6 +495,8 @@ function createMcp({ backend, config, log = console }) {
     ...(reason ? { headers: { ...(body === undefined ? {} : { 'Content-Type': 'application/json' }), 'X-Audit-Log-Reason': encodeURIComponent(String(reason).slice(0, 400)) } } : {}),
   });
   Object.assign(HANDLERS, {
+    async discord_get_bot_user() { return discordRequest('/users/@me'); },
+
     async discord_list_members(a) {
       const q = new URLSearchParams({ limit: String(Math.min(1000, Math.max(1, Number(a.limit) || 100))) });
       if (a.after) q.set('after', a.after);
@@ -587,6 +589,40 @@ function createMcp({ backend, config, log = console }) {
     async discord_create_poll_message(a) { if(!Array.isArray(a.answers)||a.answers.length<2||a.answers.length>10) throw new ToolError('A poll requires 2–10 answers.'); const content=String(a.question||''); if(content.length>300) throw new ToolError('Poll question must be 300 characters or fewer.'); const answers=a.answers.map(x=>({poll_media:{text:String(x.text||'').slice(0,55)}})); const body={content:'',poll:{question:{text:content},answers,duration:Math.min(768,Math.max(1,Number(a.duration_hours)||24)),allow_multiselect:!!a.allow_multiselect},allowed_mentions:{parse:[]}}; return discordRequest(`/channels/${encodeURIComponent(a.channel_id)}/messages`,djson('POST',body)); },
     async discord_get_message(a) { return discordRequest(`/channels/${encodeURIComponent(a.channel_id)}/messages/${encodeURIComponent(a.message_id)}`); },
   });
+
+
+  async function discordGatewayListServers() {
+    const token=process.env.DISCORD_BOT_TOKEN;
+    if(!token) throw new ToolError('Discord is not configured yet. Add DISCORD_BOT_TOKEN to the ClipFX frontend deployment environment.');
+    if(typeof WebSocket!=='function') throw new ToolError('This runtime does not expose WebSocket, so server enumeration via the Discord Gateway is unavailable here.');
+    return new Promise((resolve,reject)=>{
+      let ws, heartbeat, timeout, settled=false;
+      const finish=(err,value)=>{
+        if(settled)return; settled=true;
+        if(heartbeat)clearInterval(heartbeat);
+        if(timeout)clearTimeout(timeout);
+        try{ws&&ws.close();}catch{}
+        err?reject(err):resolve(value);
+      };
+      timeout=setTimeout(()=>finish(new ToolError('Discord Gateway timed out while listing servers. Try again shortly.')),12000);
+      try{ws=new WebSocket('wss://gateway.discord.gg/?v=10&encoding=json');}
+      catch(err){finish(new ToolError('Could not connect to the Discord Gateway.'));return;}
+      ws.addEventListener('message',async(event)=>{
+        let packet;
+        try{const raw=typeof event.data==='string'?event.data:await event.data.text();packet=JSON.parse(raw);}catch{return;}
+        if(packet.op===10){
+          const interval=Number(packet.d&&packet.d.heartbeat_interval)||45000;
+          heartbeat=setInterval(()=>{if(ws.readyState===WebSocket.OPEN)ws.send(JSON.stringify({op:1,d:null}));},interval);
+          ws.send(JSON.stringify({op:2,d:{token,intents:1,properties:{os:'linux',browser:'clipfx-mcp',device:'clipfx-mcp'}}}));
+        }else if(packet.op===0&&packet.t==='READY'){
+          const d=packet.d||{};
+          finish(null,{bot:d.user?{id:d.user.id,username:d.user.username,global_name:d.user.global_name||null}:null,servers:(d.guilds||[]).map(g=>({id:g.id,name:g.name||null,unavailable:!!g.unavailable,owner:!!g.owner,permissions:g.permissions||null})),count:(d.guilds||[]).length,note:'Discord may mark unavailable guilds while they are temporarily offline.'});
+        }else if(packet.op===9){finish(new ToolError('Discord rejected the Gateway session. Check the bot token and try again.'));}
+      });
+      ws.addEventListener('error',()=>finish(new ToolError('Discord Gateway connection failed.')));
+      ws.addEventListener('close',()=>{if(!settled)finish(new ToolError('Discord Gateway closed before returning the server list.'));});
+    });
+  }
 
   async function discordRequest(path, init = {}) {
     const token = process.env.DISCORD_BOT_TOKEN;
