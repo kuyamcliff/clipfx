@@ -465,7 +465,7 @@ function createMcp({ backend, config, log = console }) {
           protocolVersion: PROTOCOL_VERSIONS.includes(asked) ? asked : PROTOCOL_VERSIONS[0],
           capabilities: { tools: { listChanged: false } },
           serverInfo: { name: 'clipfx', title: 'ClipFX', version: SERVER_VERSION, websiteUrl: ctx.origin },
-          instructions: `ClipFX (${ctx.origin}) is a free library of video editing resources, and you are signed in to the user's ClipFX account. Use search_files and get_file to find assets and get_download_link to fetch them; always respect each file's license. You can also manage the user's own files (upload_small_file or start_upload, then publish_file), saved files and profile, within the permissions they approved. Confirm with the user before publishing, deleting or reporting.`,
+          instructions: `ClipFX (${ctx.origin}) is a free library of video editing resources, and you are signed in to the user's ClipFX account. Use search_files and get_file to find assets and get_download_link to fetch them; always respect each file's license. You can also manage the user's own files (upload_small_file or start_upload, then publish_file), saved files and profile, within the permissions they approved. If Discord is configured on this deployment, use discord_list_servers, discord_list_channels, and discord_read_messages to inspect authorized Discord spaces; send messages only when the user explicitly asks. Confirm with the user before publishing, deleting or reporting.`,
         });
       }
       case 'ping': return reply({});
