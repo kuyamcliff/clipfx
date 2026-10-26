@@ -178,6 +178,32 @@ const TOOLS = [
       contact: str('How to reach the reporter. Required for copyright claims.'),
     }, ['slug', 'reason']),
   },
+  // Discord: uses a server-side bot token configured in Vercel. Never accept bot tokens from tool arguments.
+  {
+    name: 'discord_list_servers', title: 'List Discord servers', scope: null, annotations: READ,
+    description: 'List Discord servers accessible to the configured ClipFX Discord bot.',
+    inputSchema: obj({}),
+  },
+  {
+    name: 'discord_list_channels', title: 'List Discord channels', scope: null, annotations: READ,
+    description: 'List channels in a Discord server the configured bot can access.',
+    inputSchema: obj({ guild_id: str('Discord server (guild) ID.') }, ['guild_id']),
+  },
+  {
+    name: 'discord_read_messages', title: 'Read Discord messages', scope: null, annotations: READ,
+    description: 'Read recent messages in a Discord channel. The bot must have View Channel and Read Message History. Message content access may require the Message Content privileged intent.',
+    inputSchema: obj({ channel_id: str('Discord channel ID.'), limit: int('Number of messages, 1–100; defaults to 25.', { minimum: 1, maximum: 100 }) }, ['channel_id']),
+  },
+  {
+    name: 'discord_send_message', title: 'Send a Discord message', scope: null, annotations: WRITE,
+    description: 'Send a message to a Discord channel accessible to the configured bot. Confirm with the user before sending.',
+    inputSchema: obj({ channel_id: str('Discord channel ID.'), content: str('Message text, 1–2000 characters.', { minLength: 1, maxLength: 2000 }) }, ['channel_id', 'content']),
+  },
+  {
+    name: 'discord_get_server_info', title: 'Get Discord server information', scope: null, annotations: READ,
+    description: 'Get basic information and member counts for a Discord server accessible to the bot.',
+    inputSchema: obj({ guild_id: str('Discord server (guild) ID.') }, ['guild_id']),
+  },
 ];
 const TOOL_MAP = Object.fromEntries(TOOLS.map((t) => [t.name, t]));
 
@@ -359,7 +385,50 @@ function createMcp({ backend, config, log = console }) {
       const d = (await call(ctx, 'POST', `${slugPath(a.slug)}/report`, { reason: a.reason, details: a.details || '', contact: a.contact || '' })).data;
       return { reported: true, message: d.message };
     },
+    async discord_list_servers() {
+      return discordRequest('/users/@me/guilds');
+    },
+    async discord_list_channels(a) {
+      return discordRequest(`/guilds/${encodeURIComponent(a.guild_id)}/channels`);
+    },
+    async discord_read_messages(a) {
+      const limit = Math.min(100, Math.max(1, Number(a.limit) || 25));
+      return discordRequest(`/channels/${encodeURIComponent(a.channel_id)}/messages?limit=${limit}`);
+    },
+    async discord_send_message(a) {
+      const content = String(a.content || '').trim();
+      if (!content) throw new ToolError('Message content cannot be empty.');
+      if (content.length > 2000) throw new ToolError('Discord messages must be 2,000 characters or fewer.');
+      return discordRequest(`/channels/${encodeURIComponent(a.channel_id)}/messages`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content, allowed_mentions: { parse: [] } }),
+      });
+    },
+    async discord_get_server_info(a) {
+      return discordRequest(`/guilds/${encodeURIComponent(a.guild_id)}?with_counts=true`);
+    },
   };
+
+  async function discordRequest(path, init = {}) {
+    const token = process.env.DISCORD_BOT_TOKEN;
+    if (!token) throw new ToolError('Discord is not configured yet. Add DISCORD_BOT_TOKEN to the ClipFX frontend deployment environment, redeploy, then invite the bot to your Discord server.');
+    const response = await fetch(`https://discord.com/api/v10${path}`, {
+      ...init,
+      headers: { Authorization: `Bot ${token}`, ...(init.headers || {}) },
+    });
+    const raw = await response.text();
+    let data;
+    try { data = raw ? JSON.parse(raw) : {}; } catch { data = { message: raw }; }
+    if (!response.ok) {
+      if (response.status === 401) throw new ToolError('Discord rejected the configured bot token. Check DISCORD_BOT_TOKEN in the deployment environment.');
+      if (response.status === 403) throw new ToolError('The Discord bot lacks permission for this server, channel, or action.');
+      if (response.status === 404) throw new ToolError('Discord could not find that server or channel, or the bot cannot access it.');
+      if (response.status === 429) throw new ToolError('Discord rate limited this request. Wait briefly and try again.');
+      throw new ToolError(`Discord API request failed (${response.status}): ${String(data.message || 'Unknown error')}`);
+    }
+    return data;
+  }
 
   // ---- JSON-RPC ---------------------------------------------------------------------------
 
@@ -396,7 +465,7 @@ function createMcp({ backend, config, log = console }) {
           protocolVersion: PROTOCOL_VERSIONS.includes(asked) ? asked : PROTOCOL_VERSIONS[0],
           capabilities: { tools: { listChanged: false } },
           serverInfo: { name: 'clipfx', title: 'ClipFX', version: SERVER_VERSION, websiteUrl: ctx.origin },
-          instructions: `ClipFX (${ctx.origin}) is a free library of video editing resources, and you are signed in to the user's ClipFX account. Use search_files and get_file to find assets and get_download_link to fetch them; always respect each file's license. You can also manage the user's own files (upload_small_file or start_upload, then publish_file), saved files and profile, within the permissions they approved. Confirm with the user before publishing, deleting or reporting.`,
+          instructions: `ClipFX (${ctx.origin}) is a free library of video editing resources, and you are signed in to the user's ClipFX account. Use search_files and get_file to find assets and get_download_link to fetch them; always respect each file's license. You can also manage the user's own files (upload_small_file or start_upload, then publish_file), saved files and profile, within the permissions they approved. If Discord is configured on this deployment, use discord_list_servers, discord_list_channels, and discord_read_messages to inspect authorized Discord spaces; send messages only when the user explicitly asks. Confirm with the user before publishing, deleting or reporting.`,
         });
       }
       case 'ping': return reply({});
