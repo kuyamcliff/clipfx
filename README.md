@@ -103,11 +103,12 @@ The existing MCP endpoint at `/mcp` can expose Discord tools using a dedicated D
 
 1. Create a Discord application and bot in the [Discord Developer Portal](https://discord.com/developers/applications).
 2. Invite the bot only to the server(s) you want it to access. Grant the minimum permissions needed: View Channels, Read Message History, and Send Messages only if you want posting.
-3. Add the bot token as the **`DISCORD_BOT_TOKEN` environment variable on the ClipFX frontend's Vercel project**. Never put it in the browser, source code, repository, or an MCP tool argument.
-4. Redeploy the frontend. The existing `/mcp` endpoint will then expose `discord_list_servers`, `discord_list_channels`, `discord_read_messages`, `discord_send_message`, and `discord_get_server_info`.
-5. Enable Discord's Message Content privileged intent in the Developer Portal if required for reading message bodies. The bot must also have access to each requested channel.
+3. Add **`DISCORD_BOT_TOKEN`** to the ClipFX frontend's Vercel environment. Never put the bot token in browser code, source control, or tool arguments.
+4. Add **`DISCORD_MCP_ALLOWED_USER_IDS`** as a comma-separated allowlist of ClipFX account IDs permitted to control this shared bot. Discord tools fail closed until this allowlist is configured. Use the account ID returned by your authenticated `/api/session` response; do not use a Discord user ID unless it is also your ClipFX account ID.
+5. Redeploy the frontend. The existing `/mcp` endpoint exposes the Discord tools only to allowlisted ClipFX accounts.
+6. Enable Discord's Message Content privileged intent for message bodies, and Server Members intent if you need member listings. Invite the bot with the minimum permissions required by the actions you plan to use.
 
-Discord actions use the bot's permissions. The MCP connection still requires normal ClipFX sign-in or an API key; Discord's bot token stays server-side. Sending a message should only happen when the user explicitly asks for it.
+The MCP connection still requires ClipFX sign-in or an API key; the bot token stays server-side. Read-only tools can inspect accessible data. Message sending, moderation, deletion, role/channel changes, invite creation and other consequential actions should only happen when the user explicitly requests them and confirms destructive changes.
 
 ### 4. Vercel (website)
 
