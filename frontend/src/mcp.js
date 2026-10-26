@@ -539,13 +539,17 @@ function createMcp({ backend, config, log = console }) {
     async discord_create_thread(a) { const body={name:a.name,auto_archive_duration:a.auto_archive_duration||1440,...(a.type?{type:a.type}:{})}; const path=a.message_id?`/channels/${encodeURIComponent(a.channel_id)}/messages/${encodeURIComponent(a.message_id)}/threads`:`/channels/${encodeURIComponent(a.channel_id)}/threads`; return discordRequest(path,djson('POST',body)); },
   });
 
+  // Discord bot control is restricted to this ClipFX account email. Enforce this
+  // on the server for every Discord tool; never trust an email supplied by the caller.
+  const DISCORD_MCP_ALLOWED_EMAIL = 'kuyamcliff@gmail.com';
+
   async function assertDiscordAuthorized(ctx) {
-    const allowed=String(process.env.DISCORD_MCP_ALLOWED_USER_IDS||'').split(',').map(x=>x.trim()).filter(Boolean);
-    if(!allowed.length) throw new ToolError('Discord tools are locked until DISCORD_MCP_ALLOWED_USER_IDS is configured with the ClipFX account ID(s) permitted to control the bot.');
     const session=await backend.callAs(ctx.req,'GET','/api/session',undefined,ctx.token);
     const user=session&&session.data&&session.data.user;
-    const identity=user&&[user.id,user.user_id,user.username].filter(Boolean).map(String);
-    if(!identity||!identity.some(id=>allowed.includes(id))) throw new ToolError('This ClipFX account is not authorized to control the configured Discord bot.');
+    const email=typeof (user&&user.email)==='string' ? user.email.trim().toLowerCase() : '';
+    if(email!==DISCORD_MCP_ALLOWED_EMAIL) {
+      throw new ToolError('Discord tools are restricted to the authorized ClipFX account email.');
+    }
   }
 
 
