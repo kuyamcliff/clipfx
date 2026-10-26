@@ -42,6 +42,43 @@ const FILE_FIELDS = {
   max_downloads: int('Stop allowing downloads after this many (1 to 1,000,000). 0 removes the limit.', { minimum: 0, maximum: 1000000 }),
 };
 
+const DISCORD_TOOLS = [
+  { name: "discord_list_members", title: "List members", scope: null, annotations: READ, description: "List server members (requires Server Members intent).", inputSchema: obj({ guild_id:str('Server ID.'), limit:int('1–1000; default 100.', {minimum:1,maximum:1000}), after:str('Pagination user ID.') }, ["guild_id"]) },
+  { name: "discord_get_member", title: "Get member", scope: null, annotations: READ, description: "Get a member profile and roles.", inputSchema: obj({ guild_id:str('Server ID.'), user_id:str('User ID.') }, ["guild_id","user_id"]) },
+  { name: "discord_edit_member", title: "Edit member", scope: null, annotations: WRITE, description: "Edit nickname, role IDs, voice mute/deaf flags, or timeout. Confirm moderation actions.", inputSchema: obj({ guild_id:str('Server ID.'), user_id:str('User ID.'), nick:str('Nickname; empty clears.'), roles:{type:'array',items:{type:'string'},description:'Complete role ID list.'}, mute:{type:'boolean'}, deaf:{type:'boolean'}, communication_disabled_until:str('ISO timeout end; empty clears.') }, ["guild_id","user_id"]) },
+  { name: "discord_kick_member", title: "Kick member", scope: null, annotations: { ...WRITE, destructiveHint: true }, description: "Kick a member. Confirm first.", inputSchema: obj({ guild_id:str('Server ID.'), user_id:str('User ID.'), reason:str('Audit reason.') }, ["guild_id","user_id"]) },
+  { name: "discord_ban_member", title: "Ban member", scope: null, annotations: { ...WRITE, destructiveHint: true }, description: "Ban a member, optionally deleting recent messages. Confirm first.", inputSchema: obj({ guild_id:str('Server ID.'), user_id:str('User ID.'), reason:str('Audit reason.'), delete_message_seconds:int('0–604800 seconds.', {minimum:0,maximum:604800}) }, ["guild_id","user_id"]) },
+  { name: "discord_unban_member", title: "Unban member", scope: null, annotations: WRITE, description: "Remove a server ban.", inputSchema: obj({ guild_id:str('Server ID.'), user_id:str('User ID.'), reason:str('Audit reason.') }, ["guild_id","user_id"]) },
+  { name: "discord_list_bans", title: "List bans", scope: null, annotations: READ, description: "List users banned from a server.", inputSchema: obj({ guild_id:str('Server ID.'), limit:int('1–1000.', {minimum:1,maximum:1000}), after:str('Pagination user ID.') }, ["guild_id"]) },
+  { name: "discord_list_roles", title: "List roles", scope: null, annotations: READ, description: "List server roles and permission bitfields.", inputSchema: obj({ guild_id:str('Server ID.') }, ["guild_id"]) },
+  { name: "discord_create_role", title: "Create role", scope: null, annotations: WRITE, description: "Create a server role.", inputSchema: obj({ guild_id:str('Server ID.'), name:str('Role name.'), permissions:str('Permission bitfield as decimal string.'), color:int('Integer color.', {minimum:0}), hoist:{type:'boolean'}, mentionable:{type:'boolean'} }, ["guild_id","name"]) },
+  { name: "discord_edit_role", title: "Edit role", scope: null, annotations: WRITE, description: "Edit a role.", inputSchema: obj({ guild_id:str('Server ID.'), role_id:str('Role ID.'), name:str('New name.'), permissions:str('Permission bitfield string.'), color:int('Integer color.', {minimum:0}), hoist:{type:'boolean'}, mentionable:{type:'boolean'} }, ["guild_id","role_id"]) },
+  { name: "discord_delete_role", title: "Delete role", scope: null, annotations: { ...WRITE, destructiveHint: true }, description: "Permanently delete a role. Confirm first.", inputSchema: obj({ guild_id:str('Server ID.'), role_id:str('Role ID.'), reason:str('Audit reason.') }, ["guild_id","role_id"]) },
+  { name: "discord_assign_role", title: "Assign role", scope: null, annotations: WRITE, description: "Assign a role to a member.", inputSchema: obj({ guild_id:str('Server ID.'), user_id:str('User ID.'), role_id:str('Role ID.'), reason:str('Audit reason.') }, ["guild_id","user_id","role_id"]) },
+  { name: "discord_remove_role", title: "Remove role", scope: null, annotations: WRITE, description: "Remove a role from a member.", inputSchema: obj({ guild_id:str('Server ID.'), user_id:str('User ID.'), role_id:str('Role ID.'), reason:str('Audit reason.') }, ["guild_id","user_id","role_id"]) },
+  { name: "discord_create_channel", title: "Create channel", scope: null, annotations: WRITE, description: "Create a text, voice, category, announcement, stage or forum channel.", inputSchema: obj({ guild_id:str('Server ID.'), name:str('Channel name.'), type:int('Discord channel type: 0 text, 2 voice, 4 category, 5 announcement, 13 stage, 15 forum.', {minimum:0,maximum:15}), topic:str('Topic.'), parent_id:str('Category ID.'), nsfw:{type:'boolean'}, rate_limit_per_user:int('Slowmode seconds.', {minimum:0,maximum:21600}) }, ["guild_id","name"]) },
+  { name: "discord_edit_channel", title: "Edit channel", scope: null, annotations: WRITE, description: "Edit channel name, topic, parent category, slowmode or NSFW flag.", inputSchema: obj({ channel_id:str('Channel ID.'), name:str('Name.'), topic:str('Topic.'), parent_id:str('Category ID.'), nsfw:{type:'boolean'}, rate_limit_per_user:int('Slowmode seconds.', {minimum:0,maximum:21600}), position:int('Channel position.') }, ["channel_id"]) },
+  { name: "discord_delete_channel", title: "Delete channel", scope: null, annotations: { ...WRITE, destructiveHint: true }, description: "Permanently delete a channel. Confirm first.", inputSchema: obj({ channel_id:str('Channel ID.'), reason:str('Audit reason.') }, ["channel_id"]) },
+  { name: "discord_edit_message", title: "Edit message", scope: null, annotations: WRITE, description: "Edit a message authored by this bot.", inputSchema: obj({ channel_id:str('Channel ID.'), message_id:str('Message ID.'), content:str('Replacement text, max 2000 chars.', {maxLength:2000}) }, ["channel_id","message_id","content"]) },
+  { name: "discord_delete_message", title: "Delete message", scope: null, annotations: { ...WRITE, destructiveHint: true }, description: "Delete a message. Confirm first.", inputSchema: obj({ channel_id:str('Channel ID.'), message_id:str('Message ID.'), reason:str('Audit reason.') }, ["channel_id","message_id"]) },
+  { name: "discord_bulk_delete_messages", title: "Bulk delete messages", scope: null, annotations: { ...WRITE, destructiveHint: true }, description: "Delete 2–100 messages less than 14 days old. Confirm first.", inputSchema: obj({ channel_id:str('Channel ID.'), message_ids:{type:'array',minItems:2,maxItems:100,items:{type:'string'}}, reason:str('Audit reason.') }, ["channel_id","message_ids"]) },
+  { name: "discord_add_reaction", title: "Add reaction", scope: null, annotations: WRITE, description: "Add a Unicode or custom emoji reaction.", inputSchema: obj({ channel_id:str('Channel ID.'), message_id:str('Message ID.'), emoji:str('Emoji, custom format name:id.') }, ["channel_id","message_id","emoji"]) },
+  { name: "discord_remove_reaction", title: "Remove reaction", scope: null, annotations: WRITE, description: "Remove this bot’s reaction.", inputSchema: obj({ channel_id:str('Channel ID.'), message_id:str('Message ID.'), emoji:str('Emoji, custom format name:id.') }, ["channel_id","message_id","emoji"]) },
+  { name: "discord_pin_message", title: "Pin message", scope: null, annotations: WRITE, description: "Pin a message.", inputSchema: obj({ channel_id:str('Channel ID.'), message_id:str('Message ID.'), reason:str('Audit reason.') }, ["channel_id","message_id"]) },
+  { name: "discord_unpin_message", title: "Unpin message", scope: null, annotations: WRITE, description: "Unpin a message.", inputSchema: obj({ channel_id:str('Channel ID.'), message_id:str('Message ID.'), reason:str('Audit reason.') }, ["channel_id","message_id"]) },
+  { name: "discord_list_pins", title: "List pins", scope: null, annotations: READ, description: "List pinned messages in a channel.", inputSchema: obj({ channel_id:str('Channel ID.') }, ["channel_id"]) },
+  { name: "discord_create_invite", title: "Create invite", scope: null, annotations: WRITE, description: "Create a channel invite; confirm before sharing.", inputSchema: obj({ channel_id:str('Channel ID.'), max_age:int('Expiry seconds; 0 never.', {minimum:0,maximum:604800}), max_uses:int('Use limit; 0 unlimited.', {minimum:0,maximum:100}), temporary:{type:'boolean'}, unique:{type:'boolean'} }, ["channel_id"]) },
+  { name: "discord_list_emojis", title: "List emojis", scope: null, annotations: READ, description: "List custom server emojis.", inputSchema: obj({ guild_id:str('Server ID.') }, ["guild_id"]) },
+  { name: "discord_list_webhooks", title: "List webhooks", scope: null, annotations: READ, description: "List channel webhooks without exposing webhook tokens.", inputSchema: obj({ channel_id:str('Channel ID.') }, ["channel_id"]) },
+  { name: "discord_create_webhook", title: "Create webhook", scope: null, annotations: WRITE, description: "Create a webhook; its URL is a secret. Confirm first.", inputSchema: obj({ channel_id:str('Channel ID.'), name:str('Webhook name.'), avatar_base64:str('Optional base64 image.') }, ["channel_id","name"]) },
+  { name: "discord_delete_webhook", title: "Delete webhook", scope: null, annotations: { ...WRITE, destructiveHint: true }, description: "Permanently delete a webhook. Confirm first.", inputSchema: obj({ webhook_id:str('Webhook ID.'), reason:str('Audit reason.') }, ["webhook_id"]) },
+  { name: "discord_list_events", title: "List scheduled events", scope: null, annotations: READ, description: "List server scheduled events.", inputSchema: obj({ guild_id:str('Server ID.') }, ["guild_id"]) },
+  { name: "discord_create_event", title: "Create scheduled event", scope: null, annotations: WRITE, description: "Create a scheduled event.", inputSchema: obj({ guild_id:str('Server ID.'), name:str('Event name.'), description:str('Description.'), scheduled_start_time:str('ISO timestamp.'), scheduled_end_time:str('ISO timestamp.'), entity_type:int('1 stage, 2 voice, 3 external.', {minimum:1,maximum:3}), channel_id:str('Voice/stage channel ID.'), location:str('External event location.'), privacy_level:int('Must be 2.', {enum:[2]}) }, ["guild_id","name","scheduled_start_time","scheduled_end_time","entity_type"]) },
+  { name: "discord_delete_event", title: "Delete scheduled event", scope: null, annotations: { ...WRITE, destructiveHint: true }, description: "Delete a scheduled event.", inputSchema: obj({ guild_id:str('Server ID.'), event_id:str('Event ID.') }, ["guild_id","event_id"]) },
+  { name: "discord_get_audit_log", title: "Get audit log", scope: null, annotations: READ, description: "Read server audit log entries. Requires View Audit Log permission.", inputSchema: obj({ guild_id:str('Server ID.'), limit:int('1–100; default 25.', {minimum:1,maximum:100}) }, ["guild_id"]) },
+  { name: "discord_create_thread", title: "Create thread", scope: null, annotations: WRITE, description: "Create a thread from a message or as a new thread in a channel.", inputSchema: obj({ channel_id:str('Parent channel ID.'), name:str('Thread name.'), message_id:str('Optional starter message ID.'), auto_archive_duration:int('60, 1440, 4320 or 10080 minutes.', {enum:[60,1440,4320,10080]}), type:int('11 public or 12 private.', {enum:[11,12]}) }, ["channel_id","name"]) },
+];
+
 const TOOLS = [
   // Library: any signed-in account.
   {
@@ -204,6 +241,7 @@ const TOOLS = [
     description: 'Get basic information and member counts for a Discord server accessible to the bot.',
     inputSchema: obj({ guild_id: str('Discord server (guild) ID.') }, ['guild_id']),
   },
+  ...DISCORD_TOOLS,
 ];
 const TOOL_MAP = Object.fromEntries(TOOLS.map((t) => [t.name, t]));
 
@@ -410,6 +448,66 @@ function createMcp({ backend, config, log = console }) {
     },
   };
 
+
+  const defined = (value) => Object.fromEntries(Object.entries(value).filter(([, v]) => v !== undefined));
+  const djson = (method, body, reason) => ({
+    method,
+    ...(body === undefined ? {} : { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
+    ...(reason ? { headers: { ...(body === undefined ? {} : { 'Content-Type': 'application/json' }), 'X-Audit-Log-Reason': encodeURIComponent(String(reason).slice(0, 400)) } } : {}),
+  });
+  Object.assign(HANDLERS, {
+    async discord_list_members(a) {
+      const q = new URLSearchParams({ limit: String(Math.min(1000, Math.max(1, Number(a.limit) || 100))) });
+      if (a.after) q.set('after', a.after);
+      return discordRequest(`/guilds/${encodeURIComponent(a.guild_id)}/members?${q}`);
+    },
+    async discord_get_member(a) { return discordRequest(`/guilds/${encodeURIComponent(a.guild_id)}/members/${encodeURIComponent(a.user_id)}`); },
+    async discord_edit_member(a) {
+      const body = defined({ nick: a.nick, roles: a.roles, mute: a.mute, deaf: a.deaf, communication_disabled_until: a.communication_disabled_until === '' ? null : a.communication_disabled_until });
+      return discordRequest(`/guilds/${encodeURIComponent(a.guild_id)}/members/${encodeURIComponent(a.user_id)}`, djson('PATCH', body));
+    },
+    async discord_kick_member(a) { await discordRequest(`/guilds/${encodeURIComponent(a.guild_id)}/members/${encodeURIComponent(a.user_id)}`, djson('DELETE', undefined, a.reason)); return { kicked: true, user_id: a.user_id }; },
+    async discord_ban_member(a) { await discordRequest(`/guilds/${encodeURIComponent(a.guild_id)}/bans/${encodeURIComponent(a.user_id)}`, djson('PUT', { delete_message_seconds: Math.min(604800, Math.max(0, Number(a.delete_message_seconds) || 0)) }, a.reason)); return { banned: true, user_id: a.user_id }; },
+    async discord_unban_member(a) { await discordRequest(`/guilds/${encodeURIComponent(a.guild_id)}/bans/${encodeURIComponent(a.user_id)}`, djson('DELETE', undefined, a.reason)); return { unbanned: true, user_id: a.user_id }; },
+    async discord_list_bans(a) { const q = new URLSearchParams({ limit: String(Math.min(1000, Math.max(1, Number(a.limit) || 100))) }); if (a.after) q.set('after', a.after); return discordRequest(`/guilds/${encodeURIComponent(a.guild_id)}/bans?${q}`); },
+    async discord_list_roles(a) { return discordRequest(`/guilds/${encodeURIComponent(a.guild_id)}/roles`); },
+    async discord_create_role(a) { return discordRequest(`/guilds/${encodeURIComponent(a.guild_id)}/roles`, djson('POST', defined({ name:a.name, permissions:a.permissions, color:a.color, hoist:a.hoist, mentionable:a.mentionable }))); },
+    async discord_edit_role(a) { return discordRequest(`/guilds/${encodeURIComponent(a.guild_id)}/roles/${encodeURIComponent(a.role_id)}`, djson('PATCH', defined({ name:a.name, permissions:a.permissions, color:a.color, hoist:a.hoist, mentionable:a.mentionable }))); },
+    async discord_delete_role(a) { await discordRequest(`/guilds/${encodeURIComponent(a.guild_id)}/roles/${encodeURIComponent(a.role_id)}`, djson('DELETE', undefined, a.reason)); return { deleted:true, role_id:a.role_id }; },
+    async discord_assign_role(a) { await discordRequest(`/guilds/${encodeURIComponent(a.guild_id)}/members/${encodeURIComponent(a.user_id)}/roles/${encodeURIComponent(a.role_id)}`, djson('PUT', undefined, a.reason)); return { assigned:true, user_id:a.user_id, role_id:a.role_id }; },
+    async discord_remove_role(a) { await discordRequest(`/guilds/${encodeURIComponent(a.guild_id)}/members/${encodeURIComponent(a.user_id)}/roles/${encodeURIComponent(a.role_id)}`, djson('DELETE', undefined, a.reason)); return { removed:true, user_id:a.user_id, role_id:a.role_id }; },
+    async discord_create_channel(a) { return discordRequest(`/guilds/${encodeURIComponent(a.guild_id)}/channels`, djson('POST', defined({ name:a.name, type:a.type ?? 0, topic:a.topic, parent_id:a.parent_id, nsfw:a.nsfw, rate_limit_per_user:a.rate_limit_per_user }))); },
+    async discord_edit_channel(a) { return discordRequest(`/channels/${encodeURIComponent(a.channel_id)}`, djson('PATCH', defined({ name:a.name, topic:a.topic, parent_id:a.parent_id, nsfw:a.nsfw, rate_limit_per_user:a.rate_limit_per_user, position:a.position }))); },
+    async discord_delete_channel(a) { await discordRequest(`/channels/${encodeURIComponent(a.channel_id)}`, djson('DELETE', undefined, a.reason)); return { deleted:true, channel_id:a.channel_id }; },
+    async discord_edit_message(a) { const content=String(a.content||''); if(content.length>2000) throw new ToolError('Discord messages must be 2,000 characters or fewer.'); return discordRequest(`/channels/${encodeURIComponent(a.channel_id)}/messages/${encodeURIComponent(a.message_id)}`, djson('PATCH', {content,allowed_mentions:{parse:[]}})); },
+    async discord_delete_message(a) { await discordRequest(`/channels/${encodeURIComponent(a.channel_id)}/messages/${encodeURIComponent(a.message_id)}`, djson('DELETE', undefined, a.reason)); return {deleted:true,message_id:a.message_id}; },
+    async discord_bulk_delete_messages(a) { if(!Array.isArray(a.message_ids)||a.message_ids.length<2||a.message_ids.length>100) throw new ToolError('Provide between 2 and 100 message IDs.'); const ids=[...new Set(a.message_ids)]; await discordRequest(`/channels/${encodeURIComponent(a.channel_id)}/messages/bulk-delete`, djson('POST',{messages:ids},a.reason)); return {deleted:true,requested:ids.length}; },
+    async discord_add_reaction(a) { const emoji=encodeURIComponent(String(a.emoji||'')); await discordRequest(`/channels/${encodeURIComponent(a.channel_id)}/messages/${encodeURIComponent(a.message_id)}/reactions/${emoji}/@me`,{method:'PUT'}); return {reacted:true}; },
+    async discord_remove_reaction(a) { const emoji=encodeURIComponent(String(a.emoji||'')); await discordRequest(`/channels/${encodeURIComponent(a.channel_id)}/messages/${encodeURIComponent(a.message_id)}/reactions/${emoji}/@me`,{method:'DELETE'}); return {removed:true}; },
+    async discord_pin_message(a) { await discordRequest(`/channels/${encodeURIComponent(a.channel_id)}/pins/${encodeURIComponent(a.message_id)}`,djson('PUT',undefined,a.reason)); return {pinned:true,message_id:a.message_id}; },
+    async discord_unpin_message(a) { await discordRequest(`/channels/${encodeURIComponent(a.channel_id)}/pins/${encodeURIComponent(a.message_id)}`,djson('DELETE',undefined,a.reason)); return {pinned:false,message_id:a.message_id}; },
+    async discord_list_pins(a) { return discordRequest(`/channels/${encodeURIComponent(a.channel_id)}/pins`); },
+    async discord_create_invite(a) { return discordRequest(`/channels/${encodeURIComponent(a.channel_id)}/invites`,djson('POST',defined({max_age:a.max_age,max_uses:a.max_uses,temporary:a.temporary,unique:a.unique}))); },
+    async discord_list_emojis(a) { return discordRequest(`/guilds/${encodeURIComponent(a.guild_id)}/emojis`); },
+    async discord_list_webhooks(a) { const rows=await discordRequest(`/channels/${encodeURIComponent(a.channel_id)}/webhooks`); return Array.isArray(rows)?rows.map(({token,url,...safe})=>safe):rows; },
+    async discord_create_webhook(a) { const body={name:a.name}; if(a.avatar_base64) body.avatar=`data:image/png;base64,${String(a.avatar_base64).replace(/^data:[^,]*,/,'')}`; const out=await discordRequest(`/channels/${encodeURIComponent(a.channel_id)}/webhooks`,djson('POST',body)); return {id:out.id,name:out.name,channel_id:out.channel_id,note:'Webhook credentials are secrets; keep them private.'}; },
+    async discord_delete_webhook(a) { await discordRequest(`/webhooks/${encodeURIComponent(a.webhook_id)}`,djson('DELETE',undefined,a.reason)); return {deleted:true,webhook_id:a.webhook_id}; },
+    async discord_list_events(a) { return discordRequest(`/guilds/${encodeURIComponent(a.guild_id)}/scheduled-events?with_user_count=true`); },
+    async discord_create_event(a) { const entity=Number(a.entity_type); const body={name:a.name,description:a.description||null,scheduled_start_time:a.scheduled_start_time,scheduled_end_time:a.scheduled_end_time,entity_type:entity,privacy_level:2,...(entity===3?{entity_metadata:{location:a.location||''}}:{channel_id:a.channel_id})}; if(entity===3&&!a.location) throw new ToolError('External events require a location.'); if(entity!==3&&!a.channel_id) throw new ToolError('Voice/stage events require channel_id.'); return discordRequest(`/guilds/${encodeURIComponent(a.guild_id)}/scheduled-events`,djson('POST',body)); },
+    async discord_delete_event(a) { await discordRequest(`/guilds/${encodeURIComponent(a.guild_id)}/scheduled-events/${encodeURIComponent(a.event_id)}`,{method:'DELETE'}); return {deleted:true,event_id:a.event_id}; },
+    async discord_get_audit_log(a) { const q=new URLSearchParams({limit:String(Math.min(100,Math.max(1,Number(a.limit)||25)))}); return discordRequest(`/guilds/${encodeURIComponent(a.guild_id)}/audit-logs?${q}`); },
+    async discord_create_thread(a) { const body={name:a.name,auto_archive_duration:a.auto_archive_duration||1440,...(a.type?{type:a.type}:{})}; const path=a.message_id?`/channels/${encodeURIComponent(a.channel_id)}/messages/${encodeURIComponent(a.message_id)}/threads`:`/channels/${encodeURIComponent(a.channel_id)}/threads`; return discordRequest(path,djson('POST',body)); },
+  });
+
+  async function assertDiscordAuthorized(ctx) {
+    const allowed=String(process.env.DISCORD_MCP_ALLOWED_USER_IDS||'').split(',').map(x=>x.trim()).filter(Boolean);
+    if(!allowed.length) throw new ToolError('Discord tools are locked until DISCORD_MCP_ALLOWED_USER_IDS is configured with the ClipFX account ID(s) permitted to control the bot.');
+    const session=await backend.callAs(ctx.req,'GET','/api/session',undefined,ctx.token);
+    const user=session&&session.data&&session.data.user;
+    const identity=user&&[user.id,user.user_id,user.username].filter(Boolean).map(String);
+    if(!identity||!identity.some(id=>allowed.includes(id))) throw new ToolError('This ClipFX account is not authorized to control the configured Discord bot.');
+  }
+
   async function discordRequest(path, init = {}) {
     const token = process.env.DISCORD_BOT_TOKEN;
     if (!token) throw new ToolError('Discord is not configured yet. Add DISCORD_BOT_TOKEN to the ClipFX frontend deployment environment, redeploy, then invite the bot to your Discord server.');
@@ -442,6 +540,7 @@ function createMcp({ backend, config, log = console }) {
       if (args[k] === undefined || args[k] === null || args[k] === '') return { result: textResult(`Missing required argument: ${k}`, true) };
     }
     try {
+      if (tool.name.startsWith('discord_')) await assertDiscordAuthorized(ctx);
       const data = await HANDLERS[tool.name](args, ctx);
       return { result: { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }], structuredContent: data, isError: false } };
     } catch (err) {
