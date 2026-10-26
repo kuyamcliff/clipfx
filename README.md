@@ -103,11 +103,12 @@ The existing MCP endpoint at `/mcp` can expose Discord tools using a dedicated D
 
 1. Create a Discord application and bot in the [Discord Developer Portal](https://discord.com/developers/applications).
 2. Invite the bot only to the server(s) you want it to access. Grant the minimum permissions needed: View Channels, Read Message History, and Send Messages only if you want posting.
-3. Add the bot token as the **`DISCORD_BOT_TOKEN` environment variable on the ClipFX frontend's Vercel project**. Never put it in the browser, source code, repository, or an MCP tool argument.
-4. Redeploy the frontend. The existing `/mcp` endpoint will then expose `discord_list_servers`, `discord_list_channels`, `discord_read_messages`, `discord_send_message`, and `discord_get_server_info`.
-5. Enable Discord's Message Content privileged intent in the Developer Portal if required for reading message bodies. The bot must also have access to each requested channel.
+3. Add **`DISCORD_BOT_TOKEN`** to the ClipFX frontend's Vercel environment. Never put the bot token in browser code, source control, or tool arguments.
+4. Discord MCP authorization is enforced server-side and restricted to the ClipFX account email `kuyamcliff@gmail.com`. No client-supplied email or Discord user ID can override this check; all other ClipFX accounts are denied access to Discord tools.
+5. Redeploy the frontend. The existing `/mcp` endpoint exposes the Discord tools only to that authorized ClipFX account email.
+6. Enable Discord's Message Content privileged intent for message bodies, and Server Members intent if you need member listings. Invite the bot with the minimum permissions required by the actions you plan to use.
 
-Discord actions use the bot's permissions. The MCP connection still requires normal ClipFX sign-in or an API key; Discord's bot token stays server-side. Sending a message should only happen when the user explicitly asks for it.
+The MCP connection still requires ClipFX sign-in or an API key; the bot token stays server-side. The expanded toolset covers server discovery and settings, channels and permissions, messages and polls, threads/forums, roles and members, moderation and AutoMod, emoji/stickers, invites, webhooks, scheduled events, stage instances, integrations, templates, pruning, and application slash commands. Discord still controls what the bot can do based on its intents, permissions, and role hierarchy. Discord does not expose every client feature to bots: for example, user-account-only actions and a persistent voice/audio client are outside this REST-oriented MCP integration. Message sending, moderation, deletion, role/channel changes, invite creation, pruning, and other consequential actions should only happen when explicitly requested; confirm destructive changes before executing them.
 
 ### 4. Vercel (website)
 
