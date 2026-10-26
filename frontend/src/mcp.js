@@ -279,7 +279,6 @@ const TOOLS = [
     inputSchema: obj({ guild_id: str('Discord server (guild) ID.') }, ['guild_id']),
   },
   ...DISCORD_TOOLS,
-  ...DISCORD_TOOLS,
   ...DISCORD_MORE_TOOLS,
 ];
 const TOOL_MAP = Object.fromEntries(TOOLS.map((t) => [t.name, t]));
@@ -574,7 +573,6 @@ function createMcp({ backend, config, log = console }) {
     async discord_create_stage_instance(a) { return discordRequest('/stage-instances',djson('POST',{channel_id:a.channel_id,topic:a.topic,privacy_level:a.privacy_level||2,send_start_notification:a.send_start_notification})); },
     async discord_edit_stage_instance(a) { return discordRequest(`/stage-instances/${encodeURIComponent(a.channel_id)}`,djson('PATCH',defined({topic:a.topic,privacy_level:a.privacy_level}))); },
     async discord_delete_stage_instance(a) { await discordRequest(`/stage-instances/${encodeURIComponent(a.channel_id)}`,{method:'DELETE'}); return {ended:true,channel_id:a.channel_id}; },
-    async discord_get_voice_states(a) { const guild=await discordRequest(`/guilds/${encodeURIComponent(a.guild_id)}?with_counts=true`); return {guild_id:a.guild_id,approximate_member_count:guild.approximate_member_count,voice_states_endpoint:'Discord bot API does not expose a standalone REST list of every voice state; use Gateway voice-state events for live state.'}; },
     async discord_move_member_voice(a) { return discordRequest(`/guilds/${encodeURIComponent(a.guild_id)}/members/${encodeURIComponent(a.user_id)}`,djson('PATCH',{channel_id:a.channel_id||null})); },
     async discord_list_integrations(a) { return discordRequest(`/guilds/${encodeURIComponent(a.guild_id)}/integrations`); },
     async discord_list_application_commands(a) { const path=a.guild_id?`/applications/${encodeURIComponent(a.application_id)}/guilds/${encodeURIComponent(a.guild_id)}/commands`:`/applications/${encodeURIComponent(a.application_id)}/commands`; return discordRequest(path); },
